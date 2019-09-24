@@ -4,11 +4,11 @@ scorer: Mackenzie
 date: Aug30
 
 # Project path (change when moving around)
-project_path: WILL BE AUTOMATICALLY UPDATED BY DEMO CODE
+project_path: E:\Users\Phil\DeepLabCut\examples\Reaching-Mackenzie-2018-08-30
 
 # Annotation data set configuration (and individual video cropping parameters)
 video_sets:
-  WILL BE AUTOMATICALLY UPDATED BY DEMO CODE:
+  E:\Users\Phil\DeepLabCut\examples\Reaching-Mackenzie-2018-08-30\videos\reachingvideo1.avi:
     crop: 0, 832, 0, 747
 bodyparts:
 - Hand
@@ -21,13 +21,12 @@ stop: 1
 numframes2pick: 40
 
 # Plotting configuration
-skeleton: [['Hand', 'Finger1'], ['Joystick1', 'Joystick2']]
+skeleton: [[Hand, Finger1], [Joystick1, Joystick2]]
 skeleton_color: blue
 pcutoff: 0.4
 dotsize: 12
 alphavalue: 0.7
 colormap: jet
-
 
 # Training,Evaluation and Analysis configuration
 TrainingFraction:
