@@ -1,0 +1,5 @@
+model_checkpoint_path: "E:\\Users\\Phil\\DeepLabCut\\dev\\1_3_4_5_unenhanced-Phil-2019-09-30\\dlc-models\\iteration-1\\1_3_4_5_unenhancedSep30-trainset95shuffle1\\train\\snapshot-200000"
+all_model_checkpoint_paths: "E:\\Users\\Phil\\DeepLabCut\\dev\\1_3_4_5_unenhanced-Phil-2019-09-30\\dlc-models\\iteration-1\\1_3_4_5_unenhancedSep30-trainset95shuffle1\\train\\snapshot-50000"
+all_model_checkpoint_paths: "E:\\Users\\Phil\\DeepLabCut\\dev\\1_3_4_5_unenhanced-Phil-2019-09-30\\dlc-models\\iteration-1\\1_3_4_5_unenhancedSep30-trainset95shuffle1\\train\\snapshot-100000"
+all_model_checkpoint_paths: "E:\\Users\\Phil\\DeepLabCut\\dev\\1_3_4_5_unenhanced-Phil-2019-09-30\\dlc-models\\iteration-1\\1_3_4_5_unenhancedSep30-trainset95shuffle1\\train\\snapshot-150000"
+all_model_checkpoint_paths: "E:\\Users\\Phil\\DeepLabCut\\dev\\1_3_4_5_unenhanced-Phil-2019-09-30\\dlc-models\\iteration-1\\1_3_4_5_unenhancedSep30-trainset95shuffle1\\train\\snapshot-200000"

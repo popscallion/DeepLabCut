@@ -1,7 +1,12 @@
+# Project definitions (do not edit)
 Task: 1_3_4_5_unenhanced
 scorer: Phil
 date: Sep30
+
+# Project path (change when moving around)
 project_path: E:\Users\Phil\DeepLabCut\dev\1_3_4_5_unenhanced-Phil-2019-09-30
+
+# Annotation data set configuration (and individual video cropping parameters)
 video_sets:
   ? \\rcstore02.rc.fas.harvard.edu\spierce_lab\lab\NSF forelimb project\Phil_lab\C-arm\Ex\23Apr18.LaiRegnault.SEP85.LS.biceps_teres_lat\run1retpro1_90-35-4ms\run1retpro1_90-35-4msCam1.avi
   : crop: 0, 1024, 0, 1024
@@ -50,6 +55,8 @@ bodyparts:
 start: 0
 stop: 1
 numframes2pick: 20
+
+# Plotting configuration
 skeleton:
 - - bodypart1
   - bodypart2
@@ -60,17 +67,24 @@ pcutoff: 0.1
 dotsize: 5
 alphavalue: 0.7
 colormap: jet
+
+# Training,Evaluation and Analysis configuration
 TrainingFraction:
 - 0.95
-iteration: 0
+iteration: 1
 resnet: 50
 snapshotindex: -1
 batch_size: 8
+
+# Cropping Parameters (for analysis and outlier frame detection)
 cropping: false
+#if cropping is true for analysis, then set the values here:
 x1: 0
 x2: 640
 y1: 277
 y2: 624
+
+# Refinement configuration (parameters from annotation dataset configuration also relevant in this stage)
 corner2move2:
 - 512
 - 512
