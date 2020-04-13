@@ -9,13 +9,16 @@ Licensed under GNU Lesser General Public License v3.0
 """
 
 from pathlib import Path
-import os
+import os,sys
 import numpy as np
 import pandas as pd
 import os.path
 import matplotlib as mpl
-
+import logging
 import platform
+from functools import lru_cache
+
+
 if os.environ.get('DLClight', default=False) == 'True':
     mpl.use('AGG') #anti-grain geometry engine #https://matplotlib.org/faq/usage_faq.html
 elif platform.system() == 'Darwin':
@@ -28,6 +31,7 @@ from skimage import io
 import yaml
 from deeplabcut import DEBUG
 from deeplabcut.utils import auxiliaryfunctions, conversioncode, auxfun_models
+from deeplabcut.pose_estimation_tensorflow import training
 
 #matplotlib.use('Agg')
 
@@ -44,7 +48,6 @@ def comparevideolistsanddatafolders(config):
     cfg = auxiliaryfunctions.read_config(config)
     videos = cfg['video_sets'].keys()
     video_names = [Path(i).stem for i in videos]
-
     alldatafolders = [fn for fn in os.listdir(Path(config).parent / 'labeled-data') if '_labeled' not in fn]
 
     print("Config file contains:", len(video_names))
@@ -217,7 +220,7 @@ def dropimagesduetolackofannotation(config):
         print("PROCESSED:", folder, " now # of annotated images: ", len(annotatedimages)," in folder:", len(imagelist))
 
 
-def label_frames(config,ma=False):
+def label_frames(config,multiple=False,imtypes=['*.png']):
     """
     Manually label/annotate the extracted frames. Update the list of body parts you want to localize in the config.yaml file first.
 
@@ -226,9 +229,23 @@ def label_frames(config,ma=False):
     config : string
         String containing the full path of the config file in the project.
 
+    multiple: bool, optional
+        If this is set to True, a user can label multiple individuals.
+        The default is ``False``; if provided it must be either ``True`` or ``False``.
+
+    imtypes: list of imagetypes to look for in folder to be labeled. By default only png images are considered.
+
     Example
     --------
-    >>> deeplabcut.label_frames('/analysis/project/reaching-task/config.yaml')
+    Standard use case:
+    >>> deeplabcut.label_frames('/myawesomeproject/reaching4thestars/config.yaml')
+
+    To label multiple individuals
+    >>> deeplabcut.label_frames('/analysis/project/reaching-task/config.yaml',multiple=True)
+
+    To label other image types
+    >>> label_frames(config,multiple=False,imtypes=['*.jpg','*.jpeg'])
+
     --------
 
     """
@@ -236,14 +253,14 @@ def label_frames(config,ma=False):
     wd = Path(config).resolve().parents[0]
     os.chdir(str(wd))
 
-    if ma==False:
+    if multiple==False:
         from deeplabcut.generate_training_dataset import labeling_toolbox
 
         # labeling_toolbox.show(config,Screens,scale_w,scale_h, winHack, img_scale)
-        labeling_toolbox.show(config)
+        labeling_toolbox.show(config,imtypes=imtypes)
     else:
-        from deeplabcut.generate_training_dataset import multiple_individual_labeling_toolbox
-        multiple_individual_labeling_toolbox.show(config)
+        from deeplabcut.generate_training_dataset import multiple_individuals_labeling_toolbox
+        multiple_individuals_labeling_toolbox.show(config)
 
     os.chdir(startpath)
 
@@ -511,8 +528,48 @@ def mergeandsplit(config,trainindex=0,uniform=True,windows2linux=False):
 
     return trainIndexes, testIndexes
 
+@lru_cache(maxsize=None)
+def _read_image_shape_fast(path):
+    return io.imread(path).shape
 
-def create_training_dataset(config,num_shuffles=1,Shuffles=None,windows2linux=False,trainIndexes=None,testIndexes=None):
+def format_training_data(df, train_inds, nbodyparts, project_path):
+    train_data = []
+    matlab_data = []
+
+    def to_matlab_cell(array):
+        outer = np.array([[None]], dtype=object)
+        outer[0, 0] = array.astype('int64')
+        return outer
+
+    for i in train_inds:
+        data = dict()
+        filename = df.index[i]
+        data['image'] = filename
+        img_shape = _read_image_shape_fast(os.path.join(project_path, filename))
+        try:
+            data['size'] = img_shape[2], img_shape[0], img_shape[1]
+        except IndexError:
+            data['size'] = 1, img_shape[0], img_shape[1]
+        temp = df.iloc[i].values.reshape(-1, 2)
+        joints = np.c_[range(nbodyparts), temp]
+        joints = joints[~np.isnan(joints).any(axis=1)].astype(int)
+        # Check that points lie within the image
+        inside = np.logical_and(np.logical_and(joints[:, 1] < img_shape[1], joints[:, 1] > 0),
+                                np.logical_and(joints[:, 2] < img_shape[0], joints[:, 2] > 0))
+        if not all(inside):
+            joints = joints[inside]
+        if joints.size:  # Exclude images without labels
+            data['joints'] = joints
+            train_data.append(data)
+            matlab_data.append((np.array([data['image']], dtype='U'),
+                                np.array([data['size']]),
+                                to_matlab_cell(data['joints'])))
+    matlab_data = np.asarray(matlab_data, dtype=[('image', 'O'), ('size', 'O'), ('joints', 'O')])
+    return train_data, matlab_data
+
+def create_training_dataset(config,num_shuffles=1,Shuffles=None,windows2linux=False,userfeedback=False,
+        trainIndexes=None,testIndexes=None,
+        net_type=None,augmenter_type=None):
     """
     Creates a training dataset. Labels from all the extracted frames are merged into a single .h5 file.\n
     Only the videos included in the config file are used to create this dataset.\n
@@ -534,6 +591,23 @@ def create_training_dataset(config,num_shuffles=1,Shuffles=None,windows2linux=Fa
         The annotation files contain path formated according to your operating system. If you label on windows
         but train & evaluate on a unix system (e.g. ubunt, colab, Mac) set this variable to True to convert the paths.
 
+    userfeedback: bool, optional
+        If this is set to false, then all requested train/test splits are created (no matter if they already exist). If you
+        want to assure that previous splits etc. are not overwritten, then set this to True and you will be asked for each split.
+
+    trainIndexes: list of lists, optional (default=None)
+        List of one or multiple lists containing train indexes.
+        A list containing two lists of training indexes will produce two splits.
+
+    testIndexes: list of lists, optional (default=None)
+        List of test indexes.
+
+    net_type: string
+        Type of networks. Currently resnet_50, resnet_101, resnet_152, mobilenet_v2_1.0,mobilenet_v2_0.75, mobilenet_v2_0.5, and mobilenet_v2_0.35 are supported.
+
+    augmenter_type: string
+        Type of augmenter. Currently default, imgaug, tensorpack, and deterministic are supported.
+
     Example
     --------
     >>> deeplabcut.create_training_dataset('/analysis/project/reaching-task/config.yaml',num_shuffles=1)
@@ -541,7 +615,6 @@ def create_training_dataset(config,num_shuffles=1,Shuffles=None,windows2linux=Fa
     >>> deeplabcut.create_training_dataset('C:\\Users\\Ulf\\looming-task\\config.yaml',Shuffles=[3,17,5])
     --------
     """
-    from skimage import io
     import scipy.io as sio
 
     # Loading metadata from config file:
@@ -556,121 +629,190 @@ def create_training_dataset(config,num_shuffles=1,Shuffles=None,windows2linux=Fa
     Data = Data[scorer] #extract labeled data
 
     #loading & linking pretrained models
-    net_type ='resnet_'+str(cfg['resnet'])
+    if net_type is None: #loading & linking pretrained models
+        net_type =cfg.get('default_net_type', 'resnet_50')
+    else:
+        if 'resnet' in net_type or 'mobilenet' in net_type:
+            pass
+        else:
+            raise ValueError('Invalid network type:', net_type)
+
+    if augmenter_type is None:
+        augmenter_type=cfg.get('default_augmenter', 'default')
+    else:
+        if augmenter_type in ['default','imgaug','tensorpack','deterministic']:
+            pass
+        else:
+            raise ValueError('Invalid augmenter type:', augmenter_type)
+
     import deeplabcut
     parent_path = Path(os.path.dirname(deeplabcut.__file__))
     defaultconfigfile = str(parent_path / 'pose_cfg.yaml')
+    model_path,num_shuffles=auxfun_models.Check4weights(net_type,parent_path,num_shuffles) #if the model does not exist >> throws error!
 
-    model_path,num_shuffles=auxfun_models.Check4weights(net_type,parent_path,num_shuffles)
-
-    if Shuffles==None:
-        Shuffles=range(1,num_shuffles+1,1)
+    if Shuffles is None:
+        Shuffles = range(1, num_shuffles + 1)
     else:
-        Shuffles=[i for i in Shuffles if isinstance(i,int)]
+        Shuffles = [i for i in Shuffles if isinstance(i, int)]
+
+    #print(trainIndexes,testIndexes, Shuffles, augmenter_type,net_type)
+    if trainIndexes is None and testIndexes is None:
+        splits = [(trainFraction, shuffle, SplitTrials(range(len(Data.index)), trainFraction))
+                  for trainFraction in cfg['TrainingFraction'] for shuffle in Shuffles]
+    else:
+        if len(trainIndexes) != len(testIndexes) != len(Shuffles):
+            raise ValueError('Number of Shuffles and train and test indexes should be equal.')
+        splits = []
+        for shuffle, (train_inds, test_inds) in enumerate(zip(trainIndexes, testIndexes)):
+            trainFraction = round(len(train_inds) * 1./ (len(train_inds) + len(test_inds)), 2)
+            print(f"You passed a split with the following fraction: {int(100 * trainFraction)}%")
+            splits.append((trainFraction, Shuffles[shuffle], (train_inds, test_inds)))
 
     bodyparts = cfg['bodyparts']
-    TrainingFraction = cfg['TrainingFraction']
-    for shuffle in Shuffles: # Creating shuffles starting from 1
-        for trainFraction in TrainingFraction:
-            #trainIndexes, testIndexes = SplitTrials(range(len(Data.index)), trainFraction)
-            if trainIndexes is None and testIndexes is None:
-                trainIndexes, testIndexes = SplitTrials(range(len(Data.index)), trainFraction)
-            else:
-                print("You passed a split with the following fraction:", len(trainIndexes)*1./(len(testIndexes)+len(trainIndexes))*100)
+    nbodyparts = len(bodyparts)
+    for trainFraction, shuffle, (trainIndexes, testIndexes) in splits:
+        if len(trainIndexes)>0:
+            if userfeedback:
+                trainposeconfigfile, _, _ = training.return_train_network_path(config, shuffle=shuffle, trainFraction=trainFraction)
+                if trainposeconfigfile.is_file():
+                    askuser=input ("The model folder is already present. If you continue, it will overwrite the existing model (split). Do you want to continue?(yes/no): ")
+                    if askuser=='no'or askuser=='No' or askuser=='N' or askuser=='No':
+                        raise Exception("Use the Shuffles argument as a list to specify a different shuffle index. Check out the help for more details.")
 
             ####################################################
             # Generating data structure with labeled information & frame metadata (for deep cut)
             ####################################################
-
             # Make training file!
-            data = []
-            for jj in trainIndexes:
-                H = {}
-                # load image to get dimensions:
-                filename = Data.index[jj]
-                im = io.imread(os.path.join(cfg['project_path'],filename))
-                H['image'] = filename
+            datafilename, metadatafilename = auxiliaryfunctions.GetDataandMetaDataFilenames(trainingsetfolder,
+                                                                                            trainFraction, shuffle, cfg)
 
-                if np.ndim(im)==3:
-                    H['size'] = np.array(
-                        [np.shape(im)[2],
-                         np.shape(im)[0],
-                         np.shape(im)[1]])
-                else:
-                    # print "Grayscale!"
-                    H['size'] = np.array([1, np.shape(im)[0], np.shape(im)[1]])
+            ################################################################################
+            # Saving data file (convert to training file for deeper cut (*.mat))
+            ################################################################################
+            data, MatlabData = format_training_data(Data, trainIndexes, nbodyparts, project_path)
+            sio.savemat(os.path.join(project_path,datafilename), {'dataset': MatlabData})
 
-                indexjoints=0
-                joints=np.zeros((len(bodyparts),3))*np.nan
-                for bpindex,bodypart in enumerate(bodyparts):
-                    if Data[bodypart]['x'][jj]<np.shape(im)[1] and Data[bodypart]['y'][jj]<np.shape(im)[0]: #are labels in image?
-                        joints[indexjoints,0]=int(bpindex)
-                        joints[indexjoints,1]=Data[bodypart]['x'][jj]
-                        joints[indexjoints,2]=Data[bodypart]['y'][jj]
-                        indexjoints+=1
+            ################################################################################
+            # Saving metadata (Pickle file)
+            ################################################################################
+            auxiliaryfunctions.SaveMetadata(os.path.join(project_path,metadatafilename),data, trainIndexes, testIndexes, trainFraction)
 
-                joints = joints[np.where(
-                    np.prod(np.isfinite(joints),
-                            1))[0], :]  # drop NaN, i.e. lines for missing body parts
+            ################################################################################
+            # Creating file structure for training &
+            # Test files as well as pose_yaml files (containing training and testing information)
+            #################################################################################
+            modelfoldername=auxiliaryfunctions.GetModelFolder(trainFraction,shuffle,cfg)
+            auxiliaryfunctions.attempttomakefolder(Path(config).parents[0] / modelfoldername,recursive=True)
+            auxiliaryfunctions.attempttomakefolder(str(Path(config).parents[0] / modelfoldername)+ '/train')
+            auxiliaryfunctions.attempttomakefolder(str(Path(config).parents[0] / modelfoldername)+ '/test')
 
-                assert (np.prod(np.array(joints[:, 2]) < np.shape(im)[0])
-                        )  # y coordinate within image?
-                assert (np.prod(np.array(joints[:, 1]) < np.shape(im)[1])
-                        )  # x coordinate within image?
+            path_train_config = str(os.path.join(cfg['project_path'],Path(modelfoldername),'train','pose_cfg.yaml'))
+            path_test_config = str(os.path.join(cfg['project_path'],Path(modelfoldername),'test','pose_cfg.yaml'))
+            #str(cfg['proj_path']+'/'+Path(modelfoldername) / 'test'  /  'pose_cfg.yaml')
 
-                H['joints'] = np.array(joints, dtype=int)
-                if np.size(joints)>0: #exclude images without labels
-                        data.append(H)
+            items2change = {
+                "dataset": datafilename,
+                "metadataset": metadatafilename,
+                "num_joints": len(bodyparts),
+                "all_joints": [[i] for i in range(len(bodyparts))],
+                "all_joints_names": [str(bpt) for bpt in bodyparts],
+                "init_weights": model_path,
+                "project_path": str(cfg['project_path']),
+                "net_type": net_type,
+                "dataset_type": augmenter_type,
+            }
+            trainingdata = MakeTrain_pose_yaml(items2change,path_train_config,defaultconfigfile)
+            keys2save = [
+                "dataset", "num_joints", "all_joints", "all_joints_names",
+                "net_type", 'init_weights', 'global_scale', 'location_refinement',
+                'locref_stdev'
+            ]
+            MakeTest_pose_yaml(trainingdata, keys2save,path_test_config)
+            print("The training dataset is successfully created. Use the function 'train_network' to start training. Happy training!")
+    return splits
 
-            if len(trainIndexes)>0:
-                datafilename,metadatafilename=auxiliaryfunctions.GetDataandMetaDataFilenames(trainingsetfolder,trainFraction,shuffle,cfg)
-                ################################################################################
-                # Saving metadata (Pickle file)
-                ################################################################################
-                auxiliaryfunctions.SaveMetadata(os.path.join(project_path,metadatafilename),data, trainIndexes, testIndexes, trainFraction)
-                ################################################################################
-                # Saving data file (convert to training file for deeper cut (*.mat))
-                ################################################################################
 
-                DTYPE = [('image', 'O'), ('size', 'O'), ('joints', 'O')]
-                MatlabData = np.array(
-                    [(np.array([data[item]['image']], dtype='U'),
-                      np.array([data[item]['size']]),
-                      boxitintoacell(data[item]['joints']))
-                     for item in range(len(data))],
-                    dtype=DTYPE)
+def get_largestshuffle_index(config):
+    ''' Returns the largest shuffle for all dlc-models in the current iteration.'''
+    cfg = auxiliaryfunctions.read_config(config)
+    project_path = cfg['project_path']
+    iterate = 'iteration-'+str(cfg['iteration'])
+    dlc_model_path =  os.path.join(project_path,'dlc-models',iterate)
+    if os.path.isdir(dlc_model_path):
+        models = os.listdir(dlc_model_path)
+        # sort the models directories
+        models.sort(key=lambda f: int(''.join(filter(str.isdigit, f))))
+        # get the shuffle index
+        max_shuffle_index = int(models[-1].split('shuffle')[-1])
+    else:
+        max_shuffle_index = 0
+    return(max_shuffle_index)
 
-                sio.savemat(os.path.join(project_path,datafilename), {'dataset': MatlabData})
+def create_training_model_comparison(config,trainindex=0,num_shuffles=1,net_types=['resnet_50'],augmenter_types=['default'],userfeedback=False,windows2linux=False):
+    """
+    Creates a training dataset with different networks and augmentation types (dataset_loader) so that the shuffles
+    have same training and testing indices.
 
-                ################################################################################
-                # Creating file structure for training &
-                # Test files as well as pose_yaml files (containing training and testing information)
-                #################################################################################
+    Therefore, this function is useful for benchmarking the performance of different network and augmentation types on the same training/testdata.\n
 
-                modelfoldername=auxiliaryfunctions.GetModelFolder(trainFraction,shuffle,cfg)
-                auxiliaryfunctions.attempttomakefolder(Path(config).parents[0] / modelfoldername,recursive=True)
-                auxiliaryfunctions.attempttomakefolder(str(Path(config).parents[0] / modelfoldername)+ '/'+ '/train')
-                auxiliaryfunctions.attempttomakefolder(str(Path(config).parents[0] / modelfoldername)+ '/'+ '/test')
+    Parameter
+    ----------
+    config : string
+        Full path of the config.yaml file as a string.
 
-                path_train_config = str(os.path.join(cfg['project_path'],Path(modelfoldername),'train','pose_cfg.yaml'))
-                path_test_config = str(os.path.join(cfg['project_path'],Path(modelfoldername),'test','pose_cfg.yaml'))
-                #str(cfg['proj_path']+'/'+Path(modelfoldername) / 'test'  /  'pose_cfg.yaml')
+    trainindex: int, optional
+        Either (in case uniform = True) indexes which element of TrainingFraction in the config file should be used (note it is a list!).
+        Alternatively (uniform = False) indexes which folder is dropped, i.e. the first if trainindex=0, the second if trainindex =1, etc.
 
-                items2change = {
-                    "dataset": datafilename,
-                    "metadataset": metadatafilename,
-                    "num_joints": len(bodyparts),
-                    "all_joints": [[i] for i in range(len(bodyparts))],
-                    "all_joints_names": [str(bpt) for bpt in bodyparts],
-                    "init_weights": model_path,
-                    "project_path": str(cfg['project_path']),
-                    "net_type": net_type
-                }
-                trainingdata = MakeTrain_pose_yaml(items2change,path_train_config,defaultconfigfile)
-                keys2save = [
-                    "dataset", "num_joints", "all_joints", "all_joints_names",
-                    "net_type", 'init_weights', 'global_scale', 'location_refinement',
-                    'locref_stdev'
-                ]
-                MakeTest_pose_yaml(trainingdata, keys2save,path_test_config)
-                print("The training dataset is successfully created. Use the function 'train_network' to start training. Happy training!")
+    num_shuffles : int, optional
+        Number of shuffles of training dataset to create, i.e. [1,2,3] for num_shuffles=3. Default is set to 1.
+
+    net_types: list
+        Type of networks. Currently resnet_50, resnet_101, resnet_152, mobilenet_v2_1.0,mobilenet_v2_0.75, mobilenet_v2_0.5, and mobilenet_v2_0.35 are supported.
+
+    augmenter_types: list
+        Type of augmenters. Currently "default", "imgaug", "tensorpack", and "deterministic" are supported.
+
+    userfeedback: bool, optional
+        If this is set to false, then all requested train/test splits are created (no matter if they already exist). If you
+        want to assure that previous splits etc. are not overwritten, then set this to True and you will be asked for each split.
+
+    windows2linux: bool.
+        The annotation files contain path formated according to your operating system. If you label on windows
+        but train & evaluate on a unix system (e.g. ubunt, colab, Mac) set this variable to True to convert the paths.
+
+    Example
+    --------
+    >>> deeplabcut.create_training_model_comparison('/analysis/project/reaching-task/config.yaml',num_shuffles=1,net_types=['resnet_50','resnet_152'],augmenter_types=['tensorpack','deterministic'])
+
+    Windows:
+    >>> deeplabcut.create_training_model_comparison('C:\\Users\\Ulf\\looming-task\\config.yaml',num_shuffles=1,net_types=['resnet_50','resnet_152'],augmenter_types=['tensorpack','deterministic'])
+
+    --------
+    """
+    # read cfg file
+    cfg = auxiliaryfunctions.read_config(config)
+
+    # create log file
+    log_file_name = os.path.join(cfg['project_path'],'training_model_comparison.log')
+    logger = logging.getLogger('training_model_comparison')
+    if not logger.handlers:
+        logger = logging.getLogger('training_model_comparison')
+        hdlr = logging.FileHandler(log_file_name)
+        formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+        hdlr.setFormatter(formatter)
+        logger.addHandler(hdlr)
+        logger.setLevel(logging.INFO)
+    else:
+        pass
+
+    largestshuffleindex = get_largestshuffle_index(config)
+
+    for shuffle in range(num_shuffles):
+        trainIndexes, testIndexes=mergeandsplit(config,trainindex=trainindex,uniform=True)
+        for idx_net,net in enumerate(net_types):
+            for idx_aug,aug in enumerate(augmenter_types):
+                get_max_shuffle_idx=(largestshuffleindex+idx_aug+idx_net*len(augmenter_types)+shuffle*len(augmenter_types)*len(net_types))
+                log_info = str("Shuffle index:" + str(get_max_shuffle_idx) + ", net_type:"+net +", augmenter_type:"+aug + ", trainsetindex:" +str(trainindex))
+                create_training_dataset(config,Shuffles=[get_max_shuffle_idx],net_type=net,trainIndexes=[trainIndexes],testIndexes=[testIndexes],augmenter_type=aug,userfeedback=userfeedback,windows2linux=windows2linux)
+                logger.info(log_info)
