@@ -1,0 +1,64 @@
+all_joints:
+- - 0
+- - 1
+- - 2
+- - 3
+- - 4
+- - 5
+- - 6
+- - 7
+- - 8
+- - 9
+- - 10
+- - 11
+- - 12
+- - 13
+- - 14
+- - 15
+- - 16
+- - 17
+- - 18
+- - 19
+- - 20
+- - 21
+- - 22
+- - 23
+- - 24
+- - 25
+- - 26
+all_joints_names:
+- Body_ds1_crn
+- Body_ds2_int
+- Body_ds3_cdl
+- Body_vn1_crn
+- Body_vn2_int
+- Body_vn3_cdl
+- Body_acc
+- Scapula_acr
+- Scapula_spi
+- Scapula_vtb
+- Scapula_acc
+- Humerus_dpc
+- Humerus_ent
+- Humerus_ect
+- Humerus_acc
+- Ulna_olc
+- Ulna_int
+- Ulna_dst
+- Ulna_acc
+- Radius_prx
+- Radius_int
+- Radius_dst
+- Radius_acc
+- Teres_maj_prx
+- Teres_maj_dst
+- Biceps_prx
+- Biceps_dst
+dataset: training-datasets\iteration-0\UnaugmentedDataSet_1_3_4_5_raw_20cam1Oct30\1_3_4_5_raw_20cam1_Phil95shuffle1.mat
+global_scale: 0.8
+init_weights: C:\Users\LabAdmin\.conda\envs\dlc-windowsGPU\lib\site-packages\deeplabcut\pose_estimation_tensorflow\models\pretrained\resnet_v1_50.ckpt
+location_refinement: true
+locref_stdev: 7.2801
+net_type: resnet_50
+num_joints: 27
+scoremap_dir: test
