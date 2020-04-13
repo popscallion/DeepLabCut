@@ -17,7 +17,6 @@ import argparse
 from deeplabcut.utils import auxiliaryfunctions
 import numpy as np
 import matplotlib.pyplot as plt
-import pandas as pd
 import os
 
 # https://stackoverflow.com/questions/14720331/how-to-generate-random-colors-in-matplotlib
@@ -32,10 +31,9 @@ def Histogram(vector,color,bins):
     plt.hist(dvector,color=color,histtype='step',bins=bins)
 #    fig.colorbar(im, ax=ax)
 
-def PlottingResults(video,tmpfolder,Dataframe,scorer,cfg,showfigures,suffix='.png'):
+def PlottingResults(tmpfolder,Dataframe,scorer,cfg, bodyparts2plot, showfigures,suffix='.png'):
     ''' Plots poses vs time; pose x vs pose y; histogram of differences and likelihoods.'''
     plt.figure(figsize=(8, 6))
-    bodyparts2plot = cfg['bodyparts']
     pcutoff = cfg['pcutoff']
     colors = get_cmap(len(bodyparts2plot),name = cfg['colormap'])
     alphavalue = cfg['alphavalue']
@@ -108,89 +106,58 @@ def PlottingResults(video,tmpfolder,Dataframe,scorer,cfg,showfigures,suffix='.pn
     else:
         plt.show()
 
-def RunTrajectoryAnalysis(video,basefolder,DLCscorer,videofolder,cfg,showfigures,filtered=False):
-    vname = str(Path(video).stem)
-    auxiliaryfunctions.attempttomakefolder(os.path.join(basefolder,'plot-poses'))
-    tmpfolder = os.path.join(basefolder,'plot-poses', vname)
-    auxiliaryfunctions.attempttomakefolder(tmpfolder)
-
-    print("Loading ", video, "and data.")
-    try:
-        if filtered==False:
-            dataname = str(Path(video).stem) + DLCscorer + '.h5'
-            Dataframe = pd.read_hdf(os.path.join(videofolder,dataname))
-            suffix='.png'
-        else: #for filtered output
-            try:
-                Dataframe = pd.read_hdf(os.path.join(videofolder,str(Path(video).stem) + DLCscorer + 'filtered.h5'))
-            except FileNotFoundError:
-                print("No filtered predictions found, using frame-by-frame output instead.")
-                Dataframe = pd.read_hdf(os.path.join(videofolder,str(Path(video).stem) + DLCscorer + '.h5'))
-            suffix='_filtered.png'
-            
-        PlottingResults(video,tmpfolder,Dataframe,DLCscorer,cfg,showfigures,suffix)
-        
-    except FileNotFoundError:
-        datanames=[fn for fn in os.listdir(videofolder) if (vname in fn) and (".h5" in fn) and "resnet" in fn]
-        if len(datanames)==0:
-            print("The video was not analyzed with this scorer:", DLCscorer)
-            print("No other scorers were found, please run AnalysisVideos.py first.")
-            
-        elif len(datanames)>0:
-            print("The video was not analyzed with this scorer:", DLCscorer)
-            print("Other scorers were found, however:", datanames)
-            print("Creating plots for:", datanames[0]," instead.")
-            
-            Dataframe = pd.read_hdf(os.path.join(videofolder,datanames[0]))
-            PlottingResults(video,tmpfolder,Dataframe,DLCscorer,cfg,showfigures,suffix)
-
-
 ##################################################
 # Looping analysis over video
 ##################################################
 
-def plot_trajectories(config,videos,videotype='.avi',shuffle=1,trainingsetindex=0,filtered=False,showfigures=False, destfolder=None):
+def plot_trajectories(config, videos, videotype='.avi', shuffle=1, trainingsetindex=0, filtered=False,
+                      displayedbodyparts='all', showfigures=False, destfolder=None):
     """
     Plots the trajectories of various bodyparts across the video.
-    
+
     Parameters
     ----------
      config : string
     Full path of the config.yaml file as a string.
-    
+
     videos : list
         A list of strings containing the full paths to videos for analysis or a path to the directory, where all the videos with same extension are stored.
-    
+
     videotype: string, optional
         Checks for the extension of the video in case the input to the video is a directory.\n Only videos with this extension are analyzed. The default is ``.avi``
-    
+
     shuffle: list, optional
     List of integers specifying the shuffle indices of the training dataset. The default is [1]
-    
+
     trainingsetindex: int, optional
     Integer specifying which TrainingsetFraction to use. By default the first (note that TrainingFraction is a list in config.yaml).
-    
+
     filtered: bool, default false
     Boolean variable indicating if filtered output should be plotted rather than frame-by-frame predictions. Filtered version can be calculated with deeplabcut.filterpredictions
-    
+
+    displayedbodyparts: list of strings, optional
+        This select the body parts that are plotted in the video.
+        Either ``all``, then all body parts from config.yaml are used,
+        or a list of strings that are a subset of the full list.
+        E.g. ['hand','Joystick'] for the demo Reaching-Mackenzie-2018-08-30/config.yaml to select only these two body parts.
+
     showfigures: bool, default false
     If true then plots are also displayed.
-    
+
     destfolder: string, optional
-        Specifies the destination folder that was used for storing analysis data (default is the path of the video). 
-    
+        Specifies the destination folder that was used for storing analysis data (default is the path of the video).
+
     Example
     --------
     for labeling the frames
     >>> deeplabcut.plot_trajectories('home/alex/analysis/project/reaching-task/config.yaml',['/home/alex/analysis/project/videos/reachingvideo1.avi'])
     --------
-    
+
     """
-    
     cfg = auxiliaryfunctions.read_config(config)
     trainFraction = cfg['TrainingFraction'][trainingsetindex]
-    DLCscorer = auxiliaryfunctions.GetScorerName(cfg,shuffle,trainFraction) #automatically loads corresponding model (even training iteration based on snapshot index)
-    
+    DLCscorer,DLCscorerlegacy = auxiliaryfunctions.GetScorerName(cfg,shuffle,trainFraction) #automatically loads corresponding model (even training iteration based on snapshot index)
+    bodyparts = auxiliaryfunctions.IntersectionofBodyPartsandOnesGivenbyUser(cfg, displayedbodyparts)
     Videos=auxiliaryfunctions.Getlistofvideos(videos,videotype)
     for video in Videos:
         print(video)
@@ -198,14 +165,26 @@ def plot_trajectories(config,videos,videotype='.avi',shuffle=1,trainingsetindex=
             videofolder = str(Path(video).parents[0])
         else:
             videofolder=destfolder
-            
-        videotype = str(Path(video).suffix)
-        print("Starting % ", videofolder, videos)
-        basefolder=videofolder
-        auxiliaryfunctions.attempttomakefolder(basefolder)
-        
-        RunTrajectoryAnalysis(video,basefolder,DLCscorer,videofolder,cfg,showfigures,filtered)
-        print('Plots created! Please check the directory "plot-poses" within the video directory')
+
+        vname = str(Path(video).stem)
+        print("Starting % ", videofolder, video)
+        notanalyzed, dataname, DLCscorer=auxiliaryfunctions.CheckifNotAnalyzed(videofolder,vname,DLCscorer,DLCscorerlegacy,flag='checking')
+
+        if notanalyzed:
+            print("The video was not analyzed with this scorer:", DLCscorer)
+        else:
+            #LoadData
+            print("Loading ", video, "and data.")
+            datafound,metadata,Dataframe,DLCscorer,suffix=auxiliaryfunctions.LoadAnalyzedData(str(videofolder),vname,DLCscorer,filtered) #returns boolean variable if data was found and metadata + pandas array
+            if datafound:
+                basefolder=videofolder
+                auxiliaryfunctions.attempttomakefolder(basefolder)
+                auxiliaryfunctions.attempttomakefolder(os.path.join(basefolder,'plot-poses'))
+                tmpfolder = os.path.join(basefolder,'plot-poses', vname)
+                auxiliaryfunctions.attempttomakefolder(tmpfolder)
+                PlottingResults(tmpfolder, Dataframe, DLCscorer, cfg, bodyparts, showfigures, suffix+'.png')
+
+    print('Plots created! Please check the directory "plot-poses" within the video directory')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
