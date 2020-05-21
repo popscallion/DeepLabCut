@@ -1,6 +1,0 @@
-model_checkpoint_path: "E:\\Users\\Phil\\DeepLabCut\\dev\\23Apr18CLAHE-Phil-2019-09-24\\dlc-models\\iteration-0\\23Apr18CLAHESep24-trainset95shuffle1\\train\\snapshot-770000"
-all_model_checkpoint_paths: "E:\\Users\\Phil\\DeepLabCut\\dev\\23Apr18CLAHE-Phil-2019-09-24\\dlc-models\\iteration-0\\23Apr18CLAHESep24-trainset95shuffle1\\train\\snapshot-730000"
-all_model_checkpoint_paths: "E:\\Users\\Phil\\DeepLabCut\\dev\\23Apr18CLAHE-Phil-2019-09-24\\dlc-models\\iteration-0\\23Apr18CLAHESep24-trainset95shuffle1\\train\\snapshot-740000"
-all_model_checkpoint_paths: "E:\\Users\\Phil\\DeepLabCut\\dev\\23Apr18CLAHE-Phil-2019-09-24\\dlc-models\\iteration-0\\23Apr18CLAHESep24-trainset95shuffle1\\train\\snapshot-750000"
-all_model_checkpoint_paths: "E:\\Users\\Phil\\DeepLabCut\\dev\\23Apr18CLAHE-Phil-2019-09-24\\dlc-models\\iteration-0\\23Apr18CLAHESep24-trainset95shuffle1\\train\\snapshot-760000"
-all_model_checkpoint_paths: "E:\\Users\\Phil\\DeepLabCut\\dev\\23Apr18CLAHE-Phil-2019-09-24\\dlc-models\\iteration-0\\23Apr18CLAHESep24-trainset95shuffle1\\train\\snapshot-770000"
