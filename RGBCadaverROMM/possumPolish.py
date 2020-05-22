@@ -10,43 +10,37 @@ import pandas as pd
 import deeplabcut as dlc
 import projectSpecs
 
-class possumPolish:
-    def __init__(self):
-        self.config = {}
-        self.dirs = {}
-        self.frames = {}
+def getEnv():
+    markers, experiment_id, experimenter, vids_separate, vids_merged = getSpecs(r'.\projectSpecs.yaml')
+    status = input("Type 'new' to start a new project, or enter the path to an existing config.yaml to continue with an existing project.").strip('"')
+    if status == "new":
+        createExtractMatch(20)
+    else:
+        path_config_file = status
+    project_path = os.path.dirname(path_config_file)
+    extracted_dir = os.path.join(project_path,"labeled-data")
+    xma_frames_dir = os.path.join(project_path,"frames-for-xmalab")
+    config = {  'yaml': path_config_file,
+                'wd': project_path,
+                'extracted_dir': extracted_dir,
+                'xma_dir': xma_frames_dir,
+                'markers': markers,
+                'experiment_id': experiment_id,
+                'experimenter': experimenter,
+                'vids_separate': vids_separate,
+                'vids_merged': vids_merged   }
+    return config
 
-    def getEnv(self):
-        markers, experiment_id, experimenter, vids_separate, vids_merged = self.getSpecs(r'.\projectSpecs.yaml')
-        status = input("Type 'new' to start a new project, or enter the path to an existing config.yaml to continue with an existing project.").strip('"')
-        if status == "new":
-            self.createExtractMatch(20)
-        else:
-            path_config_file = status
-        project_path = os.path.dirname(path_config_file)
-        extracted_dir = os.path.join(project_path,"labeled-data")
-        xma_frames_dir = os.path.join(project_path,"frames-for-xmalab")
-        self.config = {  'yaml': path_config_file,
-                    'wd': project_path,
-                    'extracted_dir': extracted_dir,
-                    'xma_dir': xma_frames_dir,
-                    'markers': markers,
-                    'experiment_id': experiment_id,
-                    'experimenter': experimenter,
-                    'vids_separate': vids_separate,
-                    'vids_merged': vids_merged   }
-        return self.config
-
-    def createExtractMatch(num_to_extract=20):
-        task = input("Name your project (no spaces, no periods)")
-        wd = input("Project path?").strip('"')
-        vid_format = os.path.splitext(vids_separate[0])[1]
-        path_config_file = dlc.create_new_project(task,experimenter,vids_separate, working_directory=wd, videotype=vid_format, copy_videos=True)
-        self.updateConfig(path_config_file, numframes2pick=num_to_extract)
-        dlc.extract_frames(path_config_file, userfeedback=False)  #puts extracted frames in .\labeled-data\{video-name}
-        self.getDirs(path_config_file)
-        extracted_indices = self.matchFrames(self.dirs.labeled) #get indices of extracted frames
-        extracted_frames = self.extractMatchedFrames(extracted_indices, output_dir = dirs.xma, src_vids=
+def createExtractMatch(num_to_extract=20):
+    task = input("Name your project (no spaces, no periods)")
+    wd = input("Project path?").strip('"')
+    vid_format = os.path.splitext(vids_separate[0])[1]
+    path_config_file = dlc.create_new_project(task,experimenter,vids_separate, working_directory=wd, videotype=vid_format, copy_videos=True)
+    path_config_file = updateConfig(path_config_file, numframes2pick=num_to_extract)
+    dlc.extract_frames(path_config_file, userfeedback=False)  #puts extracted frames in .\labeled-data\{video-name}
+    dirs = getDirs(path_config_file)
+    extracted_indices = matchFrames(dirs.labeled) #get indices of extracted frames
+    extracted_frames = extractMatchedFrames(extracted_indices, output_dir = dirs.xma, src_vids=
 
 def getDirs(path_config_file):
     project_path = os.path.dirname(path_config_file)
@@ -98,7 +92,7 @@ def getSpecs(path_to_specfile):
     else:
         spec_data = ruamel.yaml.load(open(path_to_specfile))[id]
         markers = spec_data['markers']
-        self.config.markers = []
+        double_markers = []
         for marker in markers:
             double_markers.append(marker+'_cam1')
             double_markers.append(marker+'_cam2')
