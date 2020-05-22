@@ -6,16 +6,31 @@ import pandas as pd
 import ruamel.yaml
 import sys
 import os
+import importlib
 import tensorflow as tf
 import numpy as np
 import re
-import possumPolish as pp
+import possumPolish
+
+importlib.reload(possumPolish)
+
+model1 = possumPolish.Project()
+model1.getEnv()
+model1.extracted_frames
+
 
 config = pp.getEnv() #point to separate cam1 cam2 videos
 pp.updateConfig(config, bodyparts=markers, numframes2pick=20)
 dlc.extract_frames(config, userfeedback=False) #puts extracted frames in .\labeled-data\{video-name}
 extracted_indices = pp.matchFrames(extracted_dir) #get indices of extracted frames
 extracted_frames = pp.extractMatchedFrames(extracted_indices, output_dir = xma_frames_dir, src_vids=
+
+frame_yaml = model.frame_yaml
+with open(frame_yaml, 'w') as fp:
+	buffer = dict(extracted_indices=model.extracted_indices, extracted_frames=model.extracted_frames)
+	ruamel.yaml.dump(buffer, fp)
+	print(fp)
+	fp.close()
 
 
 

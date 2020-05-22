@@ -1,4 +1,4 @@
-opossum_101 = { 'experiment_id':'11Apr18.LaiRegnault.SEP101.LS.biceps_teres_lat',
+opossum_101 = { 'experiment':'11Apr18.LaiRegnault.SEP101.LS.biceps_teres_lat',
                 'experimenter':'L',
                 'vids_separate':[   r"Z:\lab\NSF forelimb project\l_lab\C-arm\Ex\11Apr18.LaiRegnault.SEP101.LS.biceps_teres_lat\c1_11Apr.mp4",
                                     r"Z:\lab\NSF forelimb project\l_lab\C-arm\Ex\11Apr18.LaiRegnault.SEP101.LS.biceps_teres_lat\c2_11Apr.mp4"],
