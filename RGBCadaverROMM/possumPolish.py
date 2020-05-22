@@ -8,43 +8,119 @@ import ruamel.yaml
 import numpy as np
 import pandas as pd
 import deeplabcut as dlc
-import markerLists
+import projectSpecs
 
-def getEnv():
-    status = input("Type 'new' to start a new project, otherwise hit ENTER.")
-    if status == "new":
+class possumPolish:
+    def __init__(self):
+        self.config = {}
+        self.dirs = {}
+        self.frames = {}
+
+    def getEnv(self):
+        markers, experiment_id, experimenter, vids_separate, vids_merged = self.getSpecs(r'.\projectSpecs.yaml')
+        status = input("Type 'new' to start a new project, or enter the path to an existing config.yaml to continue with an existing project.").strip('"')
+        if status == "new":
+            self.createExtractMatch(20)
+        else:
+            path_config_file = status
+        project_path = os.path.dirname(path_config_file)
+        extracted_dir = os.path.join(project_path,"labeled-data")
+        xma_frames_dir = os.path.join(project_path,"frames-for-xmalab")
+        self.config = {  'yaml': path_config_file,
+                    'wd': project_path,
+                    'extracted_dir': extracted_dir,
+                    'xma_dir': xma_frames_dir,
+                    'markers': markers,
+                    'experiment_id': experiment_id,
+                    'experimenter': experimenter,
+                    'vids_separate': vids_separate,
+                    'vids_merged': vids_merged   }
+        return self.config
+
+    def createExtractMatch(num_to_extract=20):
         task = input("Name your project (no spaces, no periods)")
-        experimenter = input("Name of experimenter?")
         wd = input("Project path?").strip('"')
-        vid_list = []
-        first_vid = input("Path to first video?").strip('"')
-        vid_list.append(first_vid)
-        next_vid = input("Path to next video? Leave blank and hit ENTER if done.").strip('"')
-        while next_vid:
-            vid_list.append(next_vid)
-            next_vid = input("Path to next video? Leave blank and hit ENTER if done.").strip('"')
-            if next_vid=="":
-                break
-        vid_format = os.path.splitext(vid_list[0])[1]
-        print(vid_list)
-        print(vid_format)
-        path_config_file = dlc.create_new_project(task,experimenter,vid_list, working_directory=wd, videotype=vid_format, copy_videos=True)
-    else:
-        path_config_file = input("Path to config.yaml?").strip('"')
-    return path_config_file
+        vid_format = os.path.splitext(vids_separate[0])[1]
+        path_config_file = dlc.create_new_project(task,experimenter,vids_separate, working_directory=wd, videotype=vid_format, copy_videos=True)
+        self.updateConfig(path_config_file, numframes2pick=num_to_extract)
+        dlc.extract_frames(path_config_file, userfeedback=False)  #puts extracted frames in .\labeled-data\{video-name}
+        self.getDirs(path_config_file)
+        extracted_indices = self.matchFrames(self.dirs.labeled) #get indices of extracted frames
+        extracted_frames = self.extractMatchedFrames(extracted_indices, output_dir = dirs.xma, src_vids=
 
+def getDirs(path_config_file):
+    project_path = os.path.dirname(path_config_file)
+    model = os.path.join(project_path,"dlc-models")
+    evaluation = os.path.join(project_path,"evaluation-results")
+    labeled = os.path.join(project_path,"labeled-data")
+    training = os.path.join(project_path,"training-datasets")
+    video = os.path.join(project_path,"videos")
+    xma_frames = os.path.join(project_path,"frames-for-xmalab")
+    os.makedirs(xma_frames_dir, exist_ok=True)
+    dirs = {    'wd':project_path,
+                'model':model,
+                'evaluation':evaluation,
+                'labeled':labeled,
+                'training':training,
+                'video':video,
+                'xma':xma_frames}
+    return dirs
 
-def getBodyparts():
-    id = input("Select an existing animal in the markerLists file or type 'quit', add the animal, and come back")
+# def getEnv():
+#     status = input("Type 'new' to start a new project, otherwise hit ENTER.")
+#     if status == "new":
+#         task = input("Name your project (no spaces, no periods)")
+#         experimenter = input("Name of experimenter?")
+#         wd = input("Project path?").strip('"')
+#         vid_list = []
+#         first_vid = input("Path to first video?").strip('"')
+#         vid_list.append(first_vid)
+#         next_vid = input("Path to next video? Leave blank and hit ENTER if done.").strip('"')
+#         while next_vid:
+#             vid_list.append(next_vid)
+#             next_vid = input("Path to next video? Leave blank and hit ENTER if done.").strip('"')
+#             if next_vid=="":
+#                 break
+#         vid_format = os.path.splitext(vid_list[0])[1]
+#         path_config_file = dlc.create_new_project(task,experimenter,vid_list, working_directory=wd, videotype=vid_format, copy_videos=True)
+#     else:
+#         path_config_file = input("Path to config.yaml?").strip('"')
+#     markers, vids_separate, vids_merged = getAnimalSpec()
+#     project_path = os.path.dirname(path_config_file)
+#     extracted_dir = os.path.join(project_path,"labeled-data")
+#     xma_frames_dir = os.path.joint(project_path,"frames-for-xmalab")
+#     return path_config_file, project_path, extracted_dir, xma_frames_dir
+
+def getSpecs(path_to_specfile):
+    id = input("Select an existing profile in the projectSpecs file or type 'quit', add the profile, and come back")
     if id == "quit":
         return
     else:
-        markers = getattr(markerLists, id)['markers']
-        double_markers = []
+        spec_data = ruamel.yaml.load(open(path_to_specfile))[id]
+        markers = spec_data['markers']
+        self.config.markers = []
         for marker in markers:
             double_markers.append(marker+'_cam1')
             double_markers.append(marker+'_cam2')
-    return double_markers
+        experiment_id = spec_data['experiment_id']
+        experimenter = spec_data['experimenter']
+        vids_separate = spec_data['vids_separate']
+        vids_merged = spec_data['vids_merged']
+    return double_markers, experiment_id, experimenter, vids_separate, vids_merged
+
+#
+#
+# def getSpecs():
+#     id = input("Select an existing profile in the specs file or type 'quit', add the profile, and come back")
+#     if id == "quit":
+#         return
+#     else:
+#         markers = getattr(projectSpecs, id)['markers']
+#         double_markers = []
+#         for marker in markers:
+#             double_markers.append(marker+'_cam1')
+#             double_markers.append(marker+'_cam2')
+#     return double_markers
 
 
 def updateConfig(path_config_file, videos=[],bodyparts=[], numframes2pick=20, corner2move2=512):
