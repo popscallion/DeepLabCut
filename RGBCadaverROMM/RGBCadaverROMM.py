@@ -11,12 +11,11 @@ import numpy as np
 import re
 import possumPolish as pp
 
-config = pp.getEnv()
-project_path = os.path.dirname(config)
-extracted_dir = os.path.join(project_path,"labeled-data")
-markers = pp.getBodyparts()
-pp.updateConfig(config, bodyparts=markers, numframes2pick=40)
-dlc.extract_frames(config, userfeedback=False)
+config = pp.getEnv() #point to separate cam1 cam2 videos
+pp.updateConfig(config, bodyparts=markers, numframes2pick=20)
+dlc.extract_frames(config, userfeedback=False) #puts extracted frames in .\labeled-data\{video-name}
+extracted_indices = pp.matchFrames(extracted_dir) #get indices of extracted frames
+extracted_frames = pp.extractMatchedFrames(extracted_indices, output_dir = xma_frames_dir, src_vids=
 
 
 
