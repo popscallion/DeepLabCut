@@ -14,7 +14,7 @@ import possumPolish
 importlib.reload(possumPolish)
 
 model = possumPolish.Project() #0. define a new project
-model.getEnv('dv101',r"C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\config.yaml") # 1. create a new dlc project with raw videos, extract 20 frames with k-means from each video, grab 40 frames total from each of two vids, stores frame paths and indices in frame_log.yaml
+model.load('dv101',r"C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\config.yaml") # 1. create a new dlc project with raw videos, extract 20 frames with k-means from each video, grab 40 frames total from each of two vids, stores frame paths and indices in frame_log.yaml
 #2. now go away and digitize the 40 frames in xmalab
 model.importXma() #3. come back and substitute merged video for raw vids
 # model.dlc.check_labels(model.yaml) ##4. optionally, check to see if labels are plotting correctly
@@ -28,6 +28,8 @@ dlc.extract_outlier_frames(model.yaml,[r"Z:\lab\NSF forelimb project\Phil_lab\dl
 
 
 model.getOutliers()
+model.env
+
 
 ##make create training dataset and train
 ###SUNDAY:
@@ -37,7 +39,7 @@ model.getOutliers()
 ###MONDAY:
 #refine
 store dir paths in framelog.yaml. write for new project and update for existing
-
+##wishlist: mover helper to overwrite project paths in pose_cfg and config
 
 
 trainposeconfigfile,testposeconfigfile,snapshotfolder=deeplabcut.return_train_network_path(path_config_file,1,0.95)

@@ -81,3 +81,26 @@ extracted_frames: [C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil
 extracted_indices: [89, 221, 347, 717, 755, 790, 828, 921, 1242, 1327, 1358, 2149,
   2614, 2931, 3116, 3353, 3801, 4191, 4315, 4317, 4413, 4741, 4928, 5268, 5292, 5318,
   5368, 5393, 5646, 5932, 6318, 6406, 6506, 6605, 6883, 6929, 7134, 7220, 7482, 7788]
+outlier_frames:
+- [C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\frames-for-xmalab\11Apr_diff_outlier\img0437.png,
+  C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\frames-for-xmalab\11Apr_diff_outlier\img0529.png,
+  C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\frames-for-xmalab\11Apr_diff_outlier\img0578.png,
+  C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\frames-for-xmalab\11Apr_diff_outlier\img1016.png,
+  C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\frames-for-xmalab\11Apr_diff_outlier\img1254.png,
+  C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\frames-for-xmalab\11Apr_diff_outlier\img1522.png,
+  C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\frames-for-xmalab\11Apr_diff_outlier\img1955.png,
+  C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\frames-for-xmalab\11Apr_diff_outlier\img2370.png,
+  C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\frames-for-xmalab\11Apr_diff_outlier\img3144.png,
+  C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\frames-for-xmalab\11Apr_diff_outlier\img3468.png,
+  C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\frames-for-xmalab\11Apr_diff_outlier\img3564.png,
+  C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\frames-for-xmalab\11Apr_diff_outlier\img3909.png,
+  C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\frames-for-xmalab\11Apr_diff_outlier\img3973.png,
+  C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\frames-for-xmalab\11Apr_diff_outlier\img4021.png,
+  C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\frames-for-xmalab\11Apr_diff_outlier\img4767.png,
+  C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\frames-for-xmalab\11Apr_diff_outlier\img5432.png,
+  C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\frames-for-xmalab\11Apr_diff_outlier\img5507.png,
+  C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\frames-for-xmalab\11Apr_diff_outlier\img6076.png,
+  C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\frames-for-xmalab\11Apr_diff_outlier\img6316.png,
+  C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\frames-for-xmalab\11Apr_diff_outlier\img7836.png]
+outlier_indices: [437, 529, 578, 1016, 1254, 1522, 1955, 2370, 3144, 3468, 3564, 3909,
+  3973, 4021, 4767, 5432, 5507, 6076, 6316, 7836]
