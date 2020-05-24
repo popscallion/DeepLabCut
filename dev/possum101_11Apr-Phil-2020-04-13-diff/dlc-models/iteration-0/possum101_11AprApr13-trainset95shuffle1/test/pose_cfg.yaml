@@ -90,7 +90,7 @@ all_joints_names:
 - Biceps_dst_cam2
 dataset: training-datasets\iteration-0\UnaugmentedDataSet_possum101_11AprApr13\possum101_11Apr_Phil95shuffle1.mat
 global_scale: 0.8
-init_weights: C:\Users\LabAdmin\.conda\envs\dlc-windowsGPU\lib\site-packages\deeplabcut\pose_estimation_tensorflow\models\pretrained\resnet_v1_50.ckpt
+init_weights: C:\Users\Phil\.conda\envs\dlc-windowsGPU\lib\site-packages\deeplabcut\pose_estimation_tensorflow\models\pretrained\resnet_v1_50.ckpt
 location_refinement: true
 locref_stdev: 7.2801
 net_type: resnet_50

@@ -8,15 +8,14 @@ import ruamel.yaml
 import numpy as np
 import pandas as pd
 import deeplabcut as dlc
-import projectSpecs
 
 class Project:
     def __init__(self):
         self.profile_path = r'.\profiles.yaml'
-        self.frame_yaml = None
         self.num_to_extract = 20
         self.corner2move2 = 512
         self.yaml = None
+        self.env_path = None
         self.wd = None
         self.experiment = None
         self.experimenter = None
@@ -24,21 +23,19 @@ class Project:
         self.dirs = {}
         self.vids_separate = []
         self.vids_merged = []
-        self.extracted_frames = []
-        self.extracted_indices = []
-        self.outlier_frames = []
-        self.outlier_indices = []
+        self.env = {}
         self.dlc = dlc
 
-    def getEnv(self, profile=None, yaml=None):
+    def load(self, profile=None, yaml=None):
         # Interactively specifies existing project config path, or starts new project.
         if profile:
             id = profile
         else:
             id = input("Select an existing profile in profiles.yaml or type 'quit', add the profile, and come back")
-        self.getSpecs(id)
+        self.getProfile(id)
         if yaml:
             self.yaml = yaml
+            self.getEnv()
         else:
             status = input("Type 'new' to start a new project, or enter the full path to an existing config.yaml to continue with an existing project. Type 'quit' to quit.").strip('"')
             if status == "new":
@@ -47,11 +44,17 @@ class Project:
                 sys.exit("Pipeline terminated.")
             else:
                 self.yaml = status
-                self.wd = os.path.dirname(self.yaml)
-                self.getDirs()
-                self.frame_yaml = os.path.join(self.wd,'frame_log.yaml')
-                extracted = ruamel.yaml.load(open(self.frame_yaml))
-                self.extracted_frames, self.extracted_indices = extracted['extracted_frames'], extracted['extracted_indices']
+                self.getEnv()
+
+    def getEnv(self):
+        self.wd = os.path.dirname(self.yaml)
+        self.getDirs()
+        self.env_path = os.path.join(self.wd,'environment.yaml')
+        if os.path.exists(self.env_path):
+            self.env = ruamel.yaml.load(open(self.env_path))
+        else:
+            self.env = self.updateEnv()
+        return self.env
 
     def getOutliers(self):
         dlc.extract_outlier_frames( self.yaml,
@@ -61,9 +64,9 @@ class Project:
                                     automatic=True,
                                     epsilon=30,
                                     comparisonbodyparts=[self.markers[24], self.markers[28],self.markers[30],self.markers[34]])
-        self.outlier_indices = self.getOutlierIndices(os.path.join(self.dirs['labeled'],os.path.splitext(os.path.basename(self.vids_merged[0]))[0]))
-        self.outlier_frames = self.extractMatchedFrames(self.outlier_indices, output_dir = self.dirs['xma'], src_vids = self.vids_merged, folder_suffix='_outlier')
-        self.updateFrameLog()
+        self.env['outlier_indices'] = self.getOutlierIndices(os.path.join(self.dirs['labeled'],os.path.splitext(os.path.basename(self.vids_merged[0]))[0]))
+        self.env['outlier_frames'] = self.extractMatchedFrames(self.env['outlier_indices'], output_dir = self.dirs['xma'], src_vids = self.vids_merged, folder_suffix='_outlier')
+        self.updateEnv()
 
     def createExtractMatch(self):
         # Creates new DeepLabCut project, overwrites default config.yaml, and performs initial frame extraction.
@@ -71,13 +74,12 @@ class Project:
         wd = input("Project path?").strip('"')
         vid_format = os.path.splitext(self.vids_separate[0])[1]
         self.yaml = dlc.create_new_project(task,self.experimenter,self.vids_separate, working_directory=wd, videotype=vid_format, copy_videos=True)
-        self.wd = os.path.dirname(self.yaml)
         self.updateConfig(bodyparts=self.markers, numframes2pick=self.num_to_extract, corner2move2=self.corner2move2)
         dlc.extract_frames(self.yaml, userfeedback=False)  #puts extracted frames in .\labeled-data\{video-name}
-        self.getDirs()
-        self.extracted_indices = self.matchFrames(self.dirs['labeled']) #get indices of extracted frames
-        self.extracted_frames = self.extractMatchedFrames(self.extracted_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_matched')
-        self.updateFrameLog()
+        self.getEnv()
+        self.env['extracted_indices'] = self.matchFrames(self.dirs['labeled']) #get indices of extracted frames
+        self.env['extracted_frames'] = self.extractMatchedFrames(self.env['extracted_indices'], output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_matched')
+        self.updateEnv()
 
     def getDirs(self):
         # Stores paths to directories created by DeepLabCut.create_new_project. Makes new directory to store frames extracted for XMALab.
@@ -90,7 +92,7 @@ class Project:
         self.dirs['spliced'] = None
         os.makedirs(self.dirs['xma'], exist_ok=True)
 
-    def getSpecs(self, id):
+    def getProfile(self, id):
         # Interactively chooses an animal/experiment profile from a list of presets (profiles.yaml).
         profiles = ruamel.yaml.load(open(self.profile_path))
         if id == "quit":
@@ -122,20 +124,14 @@ class Project:
         if corner2move2:
             config['corner2move2']=[corner2move2,corner2move2]
         ruamel.yaml.round_trip_dump(config, sys.stdout)
-        with open(self.yaml, 'w') as fp:
-            ruamel.yaml.round_trip_dump(config, fp)
-            fp.close()
+        with open(self.yaml, 'w') as file:
+            ruamel.yaml.round_trip_dump(config, file)
 
-    def updateFrameLog(self):
-        # Stores frame indices and paths in the project directory as frame_log.yaml.
-        self.frame_yaml = os.path.join(self.wd,'frame_log.yaml')
-        with open(self.frame_yaml, 'w') as fp:
-            buffer = dict(  extracted_indices=self.extracted_indices,
-                            extracted_frames=self.extracted_frames,
-                            outlier_indices=self.outlier_indices,
-                            outlier_frames=self.outlier_frames)
-            ruamel.yaml.dump(buffer, fp)
-            fp.close()
+    def updateEnv(self):
+        # Stores frame indices and paths in the project directory as environment.yaml.
+        with open(self.env_path, 'w') as file:
+            ruamel.yaml.dump(self.env, file)
+        return self.env
 
 
     def scanDir(self, directory, extension, filters=[], filter_out=True, verbose=False):
@@ -227,7 +223,7 @@ class Project:
     def getOutlierIndices(self, dir):
     	extracted_files = self.scanDir(dir, extension='png')
     	extracted_indices = [int(os.path.splitext(os.path.basename(png))[0][3:].lstrip('0').rstrip('labeled')) for png in extracted_files]
-    	new_indices = [index for index in extracted_indices if not index in self.extracted_indices]
+    	new_indices = [index for index in extracted_indices if not index in self.env['extracted_indices']]
     	unique_indices = list({index for index in new_indices})
     	result = sorted(unique_indices)
     	return result
@@ -238,8 +234,8 @@ class Project:
         if csv_path == "quit":
             sys.exit("Pipeline terminated.")
         else:
-            self.dirs['spliced'], spliced_markers = self.spliceXma2Dlc(self.vids_merged[0], csv_path, self.extracted_indices)
-            self.extractMatchedFrames(self.extracted_indices, output_dir=self.dirs['labeled'], src_vids=self.vids_merged)
+            self.dirs['spliced'], spliced_markers = self.spliceXma2Dlc(self.vids_merged[0], csv_path, self.env['extracted_indices'])
+            self.extractMatchedFrames(self.env['extracted_indices'], output_dir=self.dirs['labeled'], src_vids=self.vids_merged)
             self.updateConfig(videos=self.vids_merged, bodyparts=spliced_markers)
 
     def spliceXma2Dlc(self, substitute_video, csv_path, frame_indices):
