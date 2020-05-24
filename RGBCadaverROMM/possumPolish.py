@@ -13,6 +13,7 @@ import projectSpecs
 class Project:
     def __init__(self):
         self.profile_path = r'.\profiles.yaml'
+        self.frame_yaml = None
         self.num_to_extract = 20
         self.corner2move2 = 512
         self.yaml = None
@@ -29,6 +30,7 @@ class Project:
         self.outlier_indices = []
 
     def getEnv(self):
+        # Interactively specifies existing project config path, or starts new project.
         self.getSpecs()
         status = input("Type 'new' to start a new project, or enter the full path to an existing config.yaml to continue with an existing project. Type 'quit' to quit.").strip('"')
         if status == "new":
@@ -44,6 +46,7 @@ class Project:
             self.extracted_frames, self.extracted_indices = extracted['extracted_frames'], extracted['extracted_indices']
 
     def createExtractMatch(self):
+        # Creates new DeepLabCut project, overwrites default config.yaml, and performs initial frame extraction.
         task = input("Name your project (no spaces, no periods)")
         wd = input("Project path?").strip('"')
         vid_format = os.path.splitext(self.vids_separate[0])[1]
@@ -56,17 +59,19 @@ class Project:
         self.extracted_frames = self.extractMatchedFrames(self.extracted_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate)
         self.createFrameLog()
 
-
     def getDirs(self):
+        # Stores paths to directories created by DeepLabCut.create_new_project. Makes new directory to store frames extracted for XMALab.
         self.dirs['model'] = os.path.join(self.wd,"dlc-models")
         self.dirs['evaluation'] = os.path.join(self.wd,"evaluation-results")
         self.dirs['labeled'] = os.path.join(self.wd,"labeled-data")
         self.dirs['training'] = os.path.join(self.wd,"training-datasets")
         self.dirs['video'] = os.path.join(self.wd,"videos")
         self.dirs['xma'] = os.path.join(self.wd,"frames-for-xmalab")
+        self.dirs['spliced'] = None
         os.makedirs(self.dirs['xma'], exist_ok=True)
 
     def getSpecs(self):
+        # Interactively chooses an animal/experiment profile from a list of presets (profiles.yaml).
         id = input("Select an existing profile in profiles.yaml or type 'quit', add the profile, and come back")
         profiles = ruamel.yaml.load(open(self.profile_path))
         if id == "quit":
@@ -86,6 +91,7 @@ class Project:
                 sys.exit("Profile does not exist in profiles.yaml")
 
     def updateConfig(self, videos=[],bodyparts=[],numframes2pick=None,corner2move2=None):
+        # Updates config.yaml with arguments (if supplied).
         config = ruamel.yaml.load(open(self.yaml))
         if videos:
             video_sets={video:{"crop":"0, 1024, 0, 1024"} for video in videos}
@@ -102,6 +108,7 @@ class Project:
             fp.close()
 
     def createFrameLog(self):
+        # Stores frame indices and paths in the project directory as frame_log.yaml.
         self.frame_yaml = os.path.join(self.wd,'frame_log.yaml')
         with open(self.frame_yaml, 'w') as fp:
             buffer = dict(extracted_indices=self.extracted_indices, extracted_frames=self.extracted_frames)
@@ -109,6 +116,7 @@ class Project:
             fp.close()
 
     def scanDir(self, directory, extension, filters=[], filter_out=True, verbose=False):
+        # Recurses through a directory looking for files with a certain extension, with optional filtering behavior. Returns list of paths.
         file_list=[]
         for root, dirs, files in os.walk(directory):
             for name in files:
@@ -130,6 +138,7 @@ class Project:
         return(file_list)
 
     def vidToPngs(self, video_path, output_dir=None, indices_to_match=[], name_from_folder=True):
+        # Takes a list of frame numbers and exports matching frames from a video as pngs.
         frame_index = 0
         frame_counter = 0
         png_list = []
@@ -172,6 +181,7 @@ class Project:
         return png_list
 
     def matchFrames(self, extracted_dir):
+        # Recurses through a directory of pngs looking for unique frame numbers, returns a list of indices.
         extracted_files = self.scanDir(extracted_dir, extension='png')
         extracted_indices = [int(os.path.splitext(os.path.basename(png))[0][3:].lstrip('0')) for png in extracted_files]
         unique_indices = []
@@ -179,20 +189,34 @@ class Project:
         result = sorted(unique_indices)
         return result
 
-    def extractMatchedFrames(self, indices, output_dir = None, src_vids=[]):
+    def extractMatchedFrames(self, indices, output_dir, src_vids=[], tag_folder=True):
+        # Given a list of frame indices and a list of source videos, produces one folder of matching frame pngs per source video.
+        extracted_frames = []
         for video in src_vids:
-            out_name = os.path.splitext(os.path.basename(video))[0]+'_matched'
-            if output_dir is not None:
-                output = output_dir
+            if tag_folder == True:
+                out_name = os.path.splitext(os.path.basename(video))[0]+'_matched'
             else:
-                output = os.path.join(os.path.dirname(video),out_name)
-            extracted_frames = self.vidToPngs(video, output, indices_to_match=indices, name_from_folder=False)
+                out_name = os.path.splitext(os.path.basename(video))[0]
+            output = os.path.join(output_dir,out_name)
+            frames_from_vid = self.vidToPngs(video, output, indices_to_match=indices, name_from_folder=False)
+            extracted_frames.append(frames_from_vid)
         return extracted_frames
 
-    def spliceXma2Dlc(self, substitute_video,project_path,csv_path, frame_indices):
+    def importXma(self):
+        # Interactively imports labels from XMALab by substituting frames from merged video for original raw frames. Updates config.yaml to point to substituted frames.
+        csv_path = input("Enter the full path to XMALab 2D XY coordinates csv, or type 'quit' to abort.").strip('"')
+        if csv_path == "quit":
+            sys.exit("Pipeline terminated.")
+        else:
+            self.dirs['spliced'], spliced_markers = self.spliceXma2Dlc(self.vids_merged[0], csv_path, self.extracted_indices)
+            self.extractMatchedFrames(self.extracted_indices, output_dir=self.dirs['labeled'], src_vids=self.vids_merged, tag_folder=False)
+            self.updateConfig(videos=self.vids_merged, bodyparts=spliced_markers)
+
+    def spliceXma2Dlc(self, substitute_video, csv_path, frame_indices):
+        # Takes csv of XMALab 2D XY coordinates from 2 cameras, outputs spliced hdf+csv data for DeepLabCut
         substitute_name = os.path.splitext(os.path.basename(substitute_video))[0]
         substitute_data_relpath = os.path.join("labeled-data",substitute_name)
-        substitute_data_abspath = os.path.join(project_path,substitute_data_relpath)
+        substitute_data_abspath = os.path.join(self.wd,substitute_data_relpath)
         df=pd.read_csv(csv_path,sep=',',header=0,dtype='float',na_values='NaN')
         names = df.columns.values
         parts = [name.rsplit('_',1)[0] for name in names]
@@ -201,7 +225,7 @@ class Project:
             if not part in parts_unique:
                 parts_unique.append(part)
         df['frame_index']=[os.path.join(substitute_data_relpath,'img'+str(index).zfill(4)+'.png') for index in frame_indices]
-        df['scorer']=experimenter
+        df['scorer']=self.experimenter
         df = df.melt(id_vars=['frame_index','scorer'])
         new = df['variable'].str.rsplit("_",n=1,expand=True)
         df['variable'],df['coords'] = new[0], new[1]
@@ -211,10 +235,9 @@ class Project:
         df['bodyparts']=df['bodyparts'].str.lstrip(" ").astype(cat_type)
         newdf = df.pivot_table(columns=['scorer', 'bodyparts', 'coords'],index='frame_index',values='value',aggfunc='first',dropna=False)
         newdf.index.name=None
-        ##export
         if not os.path.exists(substitute_data_abspath):
             os.mkdir(substitute_data_abspath)
-        data_name = os.path.join(substitute_data_abspath,("CollectedData_"+experimenter+".h5"))
+        data_name = os.path.join(substitute_data_abspath,("CollectedData_"+self.experimenter+".h5"))
         newdf.to_hdf(data_name, 'df_with_missing', format='table', mode='w')
         newdf.to_csv(data_name.split('.h5')[0]+'.csv')
         print("saved "+str(data_name))
