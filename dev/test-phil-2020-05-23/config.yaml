@@ -1,16 +1,10 @@
-# Project definitions (do not edit)
-Task: possum101_11Apr
-scorer: Phil
-date: Apr13
-
-# Project path (change when moving around)
-project_path: C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff
-
-# Annotation data set configuration (and individual video cropping parameters)
+Task: test
+scorer: phil
+date: May23
+project_path: C:\Users\Phil\Development\DeepLabCut\dev\test-phil-2020-05-23
 video_sets:
   Z:\lab\NSF forelimb project\Phil_lab\C-arm\Ex\11Apr18.LaiRegnault.SEP101.LS.biceps_teres_lat\11Apr_diff.mp4:
     crop: 0, 1024, 0, 1024
-    
 bodyparts:
 - Body_ds1_crn_cam1
 - Body_ds1_crn_cam2
@@ -59,8 +53,6 @@ bodyparts:
 start: 0
 stop: 1
 numframes2pick: 20
-
-# Plotting configuration
 skeleton:
 - - bodypart1
   - bodypart2
@@ -68,28 +60,23 @@ skeleton:
   - bodypart3
 skeleton_color: black
 pcutoff: 0.1
-dotsize: 5
+dotsize: 12
 alphavalue: 0.7
 colormap: jet
-
-# Training,Evaluation and Analysis configuration
 TrainingFraction:
 - 0.95
 iteration: 0
-resnet: 50
+resnet:
 snapshotindex: -1
 batch_size: 8
-
-# Cropping Parameters (for analysis and outlier frame detection)
 cropping: false
-#if cropping is true for analysis, then set the values here:
 x1: 0
 x2: 640
 y1: 277
 y2: 624
-
-# Refinement configuration (parameters from annotation dataset configuration also relevant in this stage)
 corner2move2:
 - 512
 - 512
 move2corner: true
+default_net_type: resnet_50
+default_augmenter: default

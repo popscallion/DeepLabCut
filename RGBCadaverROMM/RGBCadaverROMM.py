@@ -1,7 +1,6 @@
 # %% Setup and parameters
 import warnings
 warnings.simplefilter('ignore')
-import deeplabcut as dlc
 import pandas as pd
 import ruamel.yaml
 import sys
@@ -15,46 +14,32 @@ import possumPolish
 importlib.reload(possumPolish)
 
 model = possumPolish.Project() #0. define a new project
-model.getEnv() # 1. create a new dlc project with raw videos, extract 20 frames with k-means from each video, grab 40 frames total from each of two vids, stores frame paths and indices in frame_log.yaml
-#3 now go away and digitize the 40 frames in xmalab
-model.importXma() #4 come back and substitute merged video for raw vids
+model.getEnv('dv101',r"C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\config.yaml") # 1. create a new dlc project with raw videos, extract 20 frames with k-means from each video, grab 40 frames total from each of two vids, stores frame paths and indices in frame_log.yaml
+#2. now go away and digitize the 40 frames in xmalab
+model.importXma() #3. come back and substitute merged video for raw vids
+# model.dlc.check_labels(model.yaml) ##4. optionally, check to see if labels are plotting correctly
+# dlc.create_training_dataset(model.yaml, augmenter_type="imgaug") ##5. make training set
+# deeplabcut.train_network(model.yaml, displayiters=10,saveiters=10000, maxiters=200000) ##6. Train network
+dlc.evaluate_network(model.yaml, plotting=True)
+dlc.analyze_videos(model.yaml,[r"Z:\lab\NSF forelimb project\Phil_lab\dlc-data-swap\11Apr_diff.mp4"])
+dlc.create_labeled_video(model.yaml,[r"Z:\lab\NSF forelimb project\Phil_lab\dlc-data-swap\11Apr_diff.mp4"])
+dlc.extract_outlier_frames(model.yaml,[r"Z:\lab\NSF forelimb project\Phil_lab\dlc-data-swap\11Apr_diff.mp4"],outlieralgorithm='jump', extractionalgorithm='kmeans', automatic=True, epsilon=30, comparisonbodyparts=['Ulna_olc_cam1','Ulna_dst_cam1','Radius_prx_cam1','Radius_dst_cam1','Humerus_ent_cam1','Humerus_ect_cam1'])
 
 
 
+model.getOutliers()
+
+##make create training dataset and train
+###SUNDAY:
+#extract outlier frames from individual vids, and bundle into a function
+#digitize outliers and retrain model
+#bundle training and evaluation into function
+###MONDAY:
+#refine
+store dir paths in framelog.yaml. write for new project and update for existing
 
 
 
-# hdf_path=r"C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\labeled-data\11Apr_diff\machinelabels-iter0.h5"
-
-
-
-# %% markdown
-# # Digitize extracted frames in xmalab, then take marker IDs from output csv and convert digitized data to h5
-substitute_video = r"Z:\lab\NSF forelimb project\Phil_lab\C-arm\Ex\11Apr18.LaiRegnault.SEP101.LS.biceps_teres_lat\11Apr_black.mp4"
-
-xma_csv_path = r"Z:\lab\NSF forelimb project\Phil_lab\C-arm\Ex\11Apr18.LaiRegnault.SEP101.LS.biceps_teres_lat\c1and2_11Apr_matched_xmalab2D.csv"
-
-
-
-##get matching frames from merged video
-frame_indices = matchFrames(extracted_dir)
-spliced_folder, bodyparts = spliceXma2Dlc(substitute_video,project_path,xma_csv_path,frame_indices)
-
-extractMatchedFrames(frame_indices, output_dir = spliced_folder, src_vids=[substitute_video])
-
-##then remove separate cameras from project and insert new folder with merged video and extracted frames
-updateConfig(path_config_file, videos=[substitute_video],bodyparts=bodyparts)
-# %% markdown
-# #### Check imported labels
-# %% codecell
-deeplabcut.check_labels(path_config_file) #this creates a subdirectory with the frames + your labels
-# %% codecell
-deeplabcut.__file__
-
-# %% markdown
-# #### 8. Create training set
-# %% codecell
-deeplabcut.create_training_dataset(path_config_file, augmenter_type="imgaug")
 trainposeconfigfile,testposeconfigfile,snapshotfolder=deeplabcut.return_train_network_path(path_config_file,1,0.95)
 cfg_dlc=deeplabcut.auxiliaryfunctions.read_plainconfig(trainposeconfigfile)
 
@@ -96,13 +81,7 @@ for shuffle in [0,1]:
 	print("TRAIN NETWORK", shuffle)
 	deeplabcut.train_network(path_config_file, shuffle=shuffle,saveiters=10000,displayiters=200,maxiters=5,max_snapshots_to_keep=11)
 # %% markdown
-# #### 9. Start training
-# %% codecell
-deeplabcut.train_network(path_config_file, displayiters=10,saveiters=10000, maxiters=200000)
-# %% codecell
-path_config_file = r"C:\Users\LabAdmin\Documents\Phil\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\config.yaml"
 
-# %% codecell
 deeplabcut.evaluate_network(path_config_file, plotting=True)
 # %% codecell
 deeplabcut.analyze_videos(path_config_file,[r"Z:\lab\NSF forelimb project\Phil_lab\dlc-data-swap\11Apr_diff.mp4"])
@@ -155,73 +134,9 @@ def xmalab2dlc(run,csv_path,labeled_data_path, width=1024, h_flip=False):
         dfx.to_csv(data_name.split('.h5')[0]+'.csv')
         print("saved "+str(data_name))
 
-run_names = ['c1_11Apr','c2_11Apr']
-labeled_data_path = r"C:\Users\LabAdmin\Documents\Phil\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-separate\labeled-data\\"
-csv_path = r"Z:\lab\NSF forelimb project\Phil_lab\C-arm\Ex\11Apr18.LaiRegnault.SEP101.LS.biceps_teres_lat\c1and2_11Apr_matched_xmalab2D.csv"
-markerlist = ['Body_ds1_crn_cam1',
-'Body_ds1_crn_cam2',
-'Body_ds2_int_cam1',
-'Body_ds2_int_cam2',
-'Body_ds3_cdl_cam1',
-'Body_ds3_cdl_cam2',
-'Body_vn1_crn_cam1',
-'Body_vn1_crn_cam2',
-'Body_vn2_int_cam1',
-'Body_vn2_int_cam2',
-'Body_vn3_cdl_cam1',
-'Body_vn3_cdl_cam2',
-'Scapula_acr_cam1',
-'Scapula_acr_cam2',
-'Scapula_spi_cam1',
-'Scapula_spi_cam2',
-'Scapula_vtb_cam1',
-'Scapula_vtb_cam2',
-'Humerus_dpc_cam1',
-'Humerus_dpc_cam2',
-'Humerus_ent_cam1',
-'Humerus_ent_cam2',
-'Humerus_ect_cam1',
-'Humerus_ect_cam2',
-'Ulna_olc_cam1',
-'Ulna_olc_cam2',
-'Ulna_int_cam1',
-'Ulna_int_cam2',
-'Ulna_dst_cam1',
-'Ulna_dst_cam2',
-'Radius_prx_cam1',
-'Radius_prx_cam2',
-'Radius_int_cam1',
-'Radius_int_cam2',
-'Radius_dst_cam1',
-'Radius_dst_cam2',
-'Teres_maj_prx_cam1',
-'Teres_maj_prx_cam2',
-'Teres_maj_dst_cam1',
-'Teres_maj_dst_cam2',
-'Biceps_prx_cam1',
-'Biceps_prx_cam2',
-'Biceps_dst_cam1',
-'Biceps_dst_cam2',]
-for run in run_names:
-    xmalab2dlc(run,csv_path,labeled_data_path, h_flip=True)
 
-# %% markdown
-# #### 6. Convert XMALab exports to DeepLabCut format
-# No spaces in marker names, otherwise 2D export fails (more header columns than data)
-#
-# %% codecell
-deeplabcut.analyze_videos(path_config_file,vids_to_analyze, videotype='.avi')
-# %% codecell
-deeplabcut.create_labeled_video(path_config_file,vids_to_analyze)
-# %% markdown
-# ## Extract outlier frames [optional step]
-#
-# This is an optional step and is used only when the evaluation results are poor i.e. the labels are incorrectly predicted. In such a case, the user can use the following function to extract frames where the labels are incorrectly predicted. This step has many options, so please look at:
-# %% codecell
-deeplabcut.extract_outlier_frames?
-# %% codecell
-deeplabcut.extract_outlier_frames(path_config_file,vid_list) #pass a specific video
-# %% markdown
+
+
 # ## Refine Labels [optional step]
 # Following the extraction of outlier frames, the user can use the following function to move the predicted labels to the correct location. Thus augmenting the training dataset.
 # %% codecell
