@@ -28,22 +28,42 @@ class Project:
         self.extracted_indices = []
         self.outlier_frames = []
         self.outlier_indices = []
+        self.dlc = dlc
 
-    def getEnv(self):
+    def getEnv(self, profile=None, yaml=None):
         # Interactively specifies existing project config path, or starts new project.
-        self.getSpecs()
-        status = input("Type 'new' to start a new project, or enter the full path to an existing config.yaml to continue with an existing project. Type 'quit' to quit.").strip('"')
-        if status == "new":
-            self.createExtractMatch()
-        elif status == "quit":
-            sys.exit("Pipeline terminated.")
+        if profile:
+            id = profile
         else:
-            self.yaml = status
-            self.wd = os.path.dirname(self.yaml)
-            self.getDirs()
-            self.frame_yaml = os.path.join(self.wd,'frame_log.yaml')
-            extracted = ruamel.yaml.load(open(self.frame_yaml))
-            self.extracted_frames, self.extracted_indices = extracted['extracted_frames'], extracted['extracted_indices']
+            id = input("Select an existing profile in profiles.yaml or type 'quit', add the profile, and come back")
+        self.getSpecs(id)
+        if yaml:
+            self.yaml = yaml
+        else:
+            status = input("Type 'new' to start a new project, or enter the full path to an existing config.yaml to continue with an existing project. Type 'quit' to quit.").strip('"')
+            if status == "new":
+                self.createExtractMatch()
+            elif status == "quit":
+                sys.exit("Pipeline terminated.")
+            else:
+                self.yaml = status
+                self.wd = os.path.dirname(self.yaml)
+                self.getDirs()
+                self.frame_yaml = os.path.join(self.wd,'frame_log.yaml')
+                extracted = ruamel.yaml.load(open(self.frame_yaml))
+                self.extracted_frames, self.extracted_indices = extracted['extracted_frames'], extracted['extracted_indices']
+
+    def getOutliers(self):
+        dlc.extract_outlier_frames( self.yaml,
+                                    self.vids_merged,
+                                    outlieralgorithm='jump',
+                                    extractionalgorithm='kmeans',
+                                    automatic=True,
+                                    epsilon=30,
+                                    comparisonbodyparts=[self.markers[24], self.markers[28],self.markers[30],self.markers[34]])
+        self.outlier_indices = self.getOutlierIndices(os.path.join(self.dirs['labeled'],os.path.splitext(os.path.basename(self.vids_merged[0]))[0]))
+        self.outlier_frames = self.extractMatchedFrames(self.outlier_indices, output_dir = self.dirs['xma'], src_vids = self.vids_merged, folder_suffix='_outlier')
+        self.updateFrameLog()
 
     def createExtractMatch(self):
         # Creates new DeepLabCut project, overwrites default config.yaml, and performs initial frame extraction.
@@ -56,8 +76,8 @@ class Project:
         dlc.extract_frames(self.yaml, userfeedback=False)  #puts extracted frames in .\labeled-data\{video-name}
         self.getDirs()
         self.extracted_indices = self.matchFrames(self.dirs['labeled']) #get indices of extracted frames
-        self.extracted_frames = self.extractMatchedFrames(self.extracted_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate)
-        self.createFrameLog()
+        self.extracted_frames = self.extractMatchedFrames(self.extracted_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_matched')
+        self.updateFrameLog()
 
     def getDirs(self):
         # Stores paths to directories created by DeepLabCut.create_new_project. Makes new directory to store frames extracted for XMALab.
@@ -70,9 +90,8 @@ class Project:
         self.dirs['spliced'] = None
         os.makedirs(self.dirs['xma'], exist_ok=True)
 
-    def getSpecs(self):
+    def getSpecs(self, id):
         # Interactively chooses an animal/experiment profile from a list of presets (profiles.yaml).
-        id = input("Select an existing profile in profiles.yaml or type 'quit', add the profile, and come back")
         profiles = ruamel.yaml.load(open(self.profile_path))
         if id == "quit":
             sys.exit("Pipeline terminated.")
@@ -107,13 +126,17 @@ class Project:
             ruamel.yaml.round_trip_dump(config, fp)
             fp.close()
 
-    def createFrameLog(self):
+    def updateFrameLog(self):
         # Stores frame indices and paths in the project directory as frame_log.yaml.
         self.frame_yaml = os.path.join(self.wd,'frame_log.yaml')
         with open(self.frame_yaml, 'w') as fp:
-            buffer = dict(extracted_indices=self.extracted_indices, extracted_frames=self.extracted_frames)
+            buffer = dict(  extracted_indices=self.extracted_indices,
+                            extracted_frames=self.extracted_frames,
+                            outlier_indices=self.outlier_indices,
+                            outlier_frames=self.outlier_frames)
             ruamel.yaml.dump(buffer, fp)
             fp.close()
+
 
     def scanDir(self, directory, extension, filters=[], filter_out=True, verbose=False):
         # Recurses through a directory looking for files with a certain extension, with optional filtering behavior. Returns list of paths.
@@ -184,23 +207,30 @@ class Project:
         # Recurses through a directory of pngs looking for unique frame numbers, returns a list of indices.
         extracted_files = self.scanDir(extracted_dir, extension='png')
         extracted_indices = [int(os.path.splitext(os.path.basename(png))[0][3:].lstrip('0')) for png in extracted_files]
-        unique_indices = []
-        unique_indices = [index for index in extracted_indices if not index in unique_indices]
+        unique_indices = list({index for index in extracted_indices})
         result = sorted(unique_indices)
         return result
 
-    def extractMatchedFrames(self, indices, output_dir, src_vids=[], tag_folder=True):
+    def extractMatchedFrames(self, indices, output_dir, src_vids=[], folder_suffix=None):
         # Given a list of frame indices and a list of source videos, produces one folder of matching frame pngs per source video.
         extracted_frames = []
         for video in src_vids:
-            if tag_folder == True:
-                out_name = os.path.splitext(os.path.basename(video))[0]+'_matched'
+            if folder_suffix:
+                out_name = os.path.splitext(os.path.basename(video))[0]+folder_suffix
             else:
                 out_name = os.path.splitext(os.path.basename(video))[0]
             output = os.path.join(output_dir,out_name)
             frames_from_vid = self.vidToPngs(video, output, indices_to_match=indices, name_from_folder=False)
             extracted_frames.append(frames_from_vid)
         return extracted_frames
+
+    def getOutlierIndices(self, dir):
+    	extracted_files = self.scanDir(dir, extension='png')
+    	extracted_indices = [int(os.path.splitext(os.path.basename(png))[0][3:].lstrip('0').rstrip('labeled')) for png in extracted_files]
+    	new_indices = [index for index in extracted_indices if not index in self.extracted_indices]
+    	unique_indices = list({index for index in new_indices})
+    	result = sorted(unique_indices)
+    	return result
 
     def importXma(self):
         # Interactively imports labels from XMALab by substituting frames from merged video for original raw frames. Updates config.yaml to point to substituted frames.
@@ -209,7 +239,7 @@ class Project:
             sys.exit("Pipeline terminated.")
         else:
             self.dirs['spliced'], spliced_markers = self.spliceXma2Dlc(self.vids_merged[0], csv_path, self.extracted_indices)
-            self.extractMatchedFrames(self.extracted_indices, output_dir=self.dirs['labeled'], src_vids=self.vids_merged, tag_folder=False)
+            self.extractMatchedFrames(self.extracted_indices, output_dir=self.dirs['labeled'], src_vids=self.vids_merged)
             self.updateConfig(videos=self.vids_merged, bodyparts=spliced_markers)
 
     def spliceXma2Dlc(self, substitute_video, csv_path, frame_indices):
