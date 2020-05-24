@@ -65,7 +65,7 @@ class Project:
                                     epsilon=30,
                                     comparisonbodyparts=[self.markers[24], self.markers[28],self.markers[30],self.markers[34]])
         self.env['outlier_indices'] = self.getOutlierIndices(os.path.join(self.dirs['labeled'],os.path.splitext(os.path.basename(self.vids_merged[0]))[0]))
-        self.env['outlier_frames'] = self.extractMatchedFrames(self.env['outlier_indices'], output_dir = self.dirs['xma'], src_vids = self.vids_merged, folder_suffix='_outlier')
+        self.env['outlier_frames'] = self.extractMatchedFrames(self.env['outlier_indices'], output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_outlier')
         self.updateEnv()
 
     def createExtractMatch(self):
