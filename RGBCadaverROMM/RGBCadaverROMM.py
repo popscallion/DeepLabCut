@@ -14,29 +14,17 @@ import possumPolish
 
 importlib.reload(possumPolish)
 
-model1 = possumPolish.Project()
-model1.getEnv()
-model1.extracted_frames
-
-
-config = pp.getEnv() #point to separate cam1 cam2 videos
-pp.updateConfig(config, bodyparts=markers, numframes2pick=20)
-dlc.extract_frames(config, userfeedback=False) #puts extracted frames in .\labeled-data\{video-name}
-extracted_indices = pp.matchFrames(extracted_dir) #get indices of extracted frames
-extracted_frames = pp.extractMatchedFrames(extracted_indices, output_dir = xma_frames_dir, src_vids=
-
-frame_yaml = model.frame_yaml
-with open(frame_yaml, 'w') as fp:
-	buffer = dict(extracted_indices=model.extracted_indices, extracted_frames=model.extracted_frames)
-	ruamel.yaml.dump(buffer, fp)
-	print(fp)
-	fp.close()
+model = possumPolish.Project() #0. define a new project
+model.getEnv() # 1. create a new dlc project with raw videos, extract 20 frames with k-means from each video, grab 40 frames total from each of two vids, stores frame paths and indices in frame_log.yaml
+#3 now go away and digitize the 40 frames in xmalab
+model.importXma() #4 come back and substitute merged video for raw vids
 
 
 
-#
+
+
+
 # hdf_path=r"C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\labeled-data\11Apr_diff\machinelabels-iter0.h5"
-
 
 
 
