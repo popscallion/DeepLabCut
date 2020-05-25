@@ -58,7 +58,9 @@ class Project:
             self.env = self.updateEnv()
         return self.env
 
-    def getOutliers(self):
+    def getOutliers(self, make_labels=False):
+        if make_labels:
+            self.deleteLabeledFrames(self.dirs['labeled'])
         # Runs 2 passes of extract_outlier_frames, focusing on distal markers for cam1 and cam2 respectively.
         dlc.extract_outlier_frames( self.yaml,
                                     self.vids_merged,
@@ -67,7 +69,7 @@ class Project:
                                     automatic=True,
                                     epsilon=self.outlier_epsilon,
                                     comparisonbodyparts=[self.markers[20], self.markers[22], self.markers[24], self.markers[28],self.markers[30],self.markers[34]],
-                                    savelabeled=True   )
+                                    savelabeled=make_labels   )
         dlc.extract_outlier_frames( self.yaml,
                                     self.vids_merged,
                                     outlieralgorithm=self.outlier_algo,
@@ -75,7 +77,7 @@ class Project:
                                     automatic=True,
                                     epsilon=self.outlier_epsilon,
                                     comparisonbodyparts=[self.markers[21], self.markers[23], self.markers[25], self.markers[29],self.markers[31],self.markers[35]],
-                                    savelabeled=True   )
+                                    savelabeled=make_labels   )
         self.dirs['spliced'] = os.path.join(self.dirs['labeled'],os.path.splitext(os.path.basename(self.vids_merged[0]))[0])
         self.env['outlier_indices'] = self.getOutlierIndices(self.dirs['spliced'])
         self.env['outlier_frames'] = self.extractMatchedFrames(self.env['outlier_indices'], output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_outlier')
@@ -261,7 +263,9 @@ class Project:
         else:
             self.deleteLabeledFrames(self.dirs['labeled'])
             self.spliceXma2Dlc(self.vids_merged[0], csv_path, self.env['outlier_indices'], outlier_mode=True)
-        print("imported digitized outliers!")
+        print("imported digitized outliers! merging datasets...")
+        dlc.merge_datasets(self.yaml)
+        print("merged imported outliers. creating new training set...")
 
     def deleteLabeledFrames(self, dir):
         frame_list = self.scanDir(dir, extension='png', filters=['labeled'], filter_out=False)
