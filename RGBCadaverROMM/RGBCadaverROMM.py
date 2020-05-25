@@ -11,6 +11,10 @@ import numpy as np
 import re
 import possumPolish
 
+tf.__version__
+sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
+
+
 
 importlib.reload(possumPolish)
 
@@ -36,15 +40,9 @@ model.dlc.check_labels(model.yaml)
 
 
 
+model.dlc.train_network(model.yaml, saveiters=10000,displayiters=20,maxiters=300000,max_snapshots_to_keep=30)
 
 
-
-
-
-
-model.dlc.merge_datasets(model.yaml)
-model.dlc.check_labels(model.yaml)
-model.dlc.create_training_dataset(model.yaml, augmenter_type="imgaug")
 
 ##make create training dataset and train
 ###SUNDAY:
