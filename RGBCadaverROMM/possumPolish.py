@@ -14,6 +14,8 @@ class Project:
         self.profile_path = r'.\profiles.yaml'
         self.num_to_extract = 20
         self.corner2move2 = 512
+        self.outlier_epsilon = 30
+        self.outlier_algo = 'fitting'
         self.yaml = None
         self.env_path = None
         self.wd = None
@@ -57,16 +59,30 @@ class Project:
         return self.env
 
     def getOutliers(self):
+        # Runs 2 passes of extract_outlier_frames, focusing on distal markers for cam1 and cam2 respectively.
         dlc.extract_outlier_frames( self.yaml,
                                     self.vids_merged,
-                                    outlieralgorithm='jump',
+                                    outlieralgorithm=self.outlier_algo,
                                     extractionalgorithm='kmeans',
                                     automatic=True,
-                                    epsilon=30,
-                                    comparisonbodyparts=[self.markers[24], self.markers[28],self.markers[30],self.markers[34]])
-        self.env['outlier_indices'] = self.getOutlierIndices(os.path.join(self.dirs['labeled'],os.path.splitext(os.path.basename(self.vids_merged[0]))[0]))
+                                    epsilon=self.outlier_epsilon,
+                                    comparisonbodyparts=[self.markers[20], self.markers[22], self.markers[24], self.markers[28],self.markers[30],self.markers[34]],
+                                    savelabeled=True   )
+        dlc.extract_outlier_frames( self.yaml,
+                                    self.vids_merged,
+                                    outlieralgorithm=self.outlier_algo,
+                                    extractionalgorithm='kmeans',
+                                    automatic=True,
+                                    epsilon=self.outlier_epsilon,
+                                    comparisonbodyparts=[self.markers[21], self.markers[23], self.markers[25], self.markers[29],self.markers[31],self.markers[35]],
+                                    savelabeled=True   )
+        self.dirs['spliced'] = os.path.join(self.dirs['labeled'],os.path.splitext(os.path.basename(self.vids_merged[0]))[0])
+        self.env['outlier_indices'] = self.getOutlierIndices(self.dirs['spliced'])
         self.env['outlier_frames'] = self.extractMatchedFrames(self.env['outlier_indices'], output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_outlier')
         self.updateEnv()
+        self.splitDlc2Xma(os.path.join(self.dirs['spliced'],'machinelabels-iter0.h5'), self.markers)
+
+
 
     def createExtractMatch(self):
         # Creates new DeepLabCut project, overwrites default config.yaml, and performs initial frame extraction.
@@ -133,7 +149,6 @@ class Project:
             ruamel.yaml.dump(self.env, file)
         return self.env
 
-
     def scanDir(self, directory, extension, filters=[], filter_out=True, verbose=False):
         # Recurses through a directory looking for files with a certain extension, with optional filtering behavior. Returns list of paths.
         file_list=[]
@@ -150,10 +165,10 @@ class Project:
         if len(filters) != 0:
             if filter_out==True:
                 for string in filters:
-                    file_list = [file for file in file_list if not re.search(string, file)]
+                    file_list = [file for file in file_list if not re.search(string, os.path.basename(file))]
             else:
                 for string in filters:
-                    file_list = [file for file in file_list if re.search(string, file)]
+                    file_list = [file for file in file_list if re.search(string, os.path.basename(file))]
         return(file_list)
 
     def vidToPngs(self, video_path, output_dir=None, indices_to_match=[], name_from_folder=True):
@@ -229,7 +244,7 @@ class Project:
     	return result
 
     def importXma(self):
-        # Interactively imports labels from XMALab by substituting frames from merged video for original raw frames. Updates config.yaml to point to substituted frames.
+        # Interactively imports labels from XMALab by substituting frames from merged video for original raw frames. Updates config.yaml to point to substituted video.
         csv_path = input("Enter the full path to XMALab 2D XY coordinates csv, or type 'quit' to abort.").strip('"')
         if csv_path == "quit":
             sys.exit("Pipeline terminated.")
@@ -238,7 +253,26 @@ class Project:
             self.extractMatchedFrames(self.env['extracted_indices'], output_dir=self.dirs['labeled'], src_vids=self.vids_merged)
             self.updateConfig(videos=self.vids_merged, bodyparts=spliced_markers)
 
-    def spliceXma2Dlc(self, substitute_video, csv_path, frame_indices):
+    def importXmaOutliers(self):
+        # Interactively imports digitized outlier frames from XMALab.
+        csv_path = input("Enter the full path to XMALab 2D XY coordinates csv, or type 'quit' to abort.").strip('"')
+        if csv_path == "quit":
+            sys.exit("Pipeline terminated.")
+        else:
+            self.deleteLabeledFrames(self.dirs['labeled'])
+            self.spliceXma2Dlc(self.vids_merged[0], csv_path, self.env['outlier_indices'], outlier_mode=True)
+        print("imported digitized outliers!")
+
+    def deleteLabeledFrames(self, dir):
+        frame_list = self.scanDir(dir, extension='png', filters=['labeled'], filter_out=False)
+        for frame in frame_list:
+            os.remove(frame)
+        print("deleted "+str(len(frame_list))+" labeled frames!")
+
+
+
+
+    def spliceXma2Dlc(self, substitute_video, csv_path, frame_indices, outlier_mode=False):
         # Takes csv of XMALab 2D XY coordinates from 2 cameras, outputs spliced hdf+csv data for DeepLabCut
         substitute_name = os.path.splitext(os.path.basename(substitute_video))[0]
         substitute_data_relpath = os.path.join("labeled-data",substitute_name)
@@ -263,7 +297,10 @@ class Project:
         newdf.index.name=None
         if not os.path.exists(substitute_data_abspath):
             os.mkdir(substitute_data_abspath)
-        data_name = os.path.join(substitute_data_abspath,("CollectedData_"+self.experimenter+".h5"))
+        if outlier_mode:
+            data_name = os.path.join(substitute_data_abspath,("MachineLabelsRefine.h5"))
+        else:
+            data_name = os.path.join(substitute_data_abspath,("CollectedData_"+self.experimenter+".h5"))
         newdf.to_hdf(data_name, 'df_with_missing', format='table', mode='w')
         newdf.to_csv(data_name.split('.h5')[0]+'.csv')
         print("saved "+str(data_name))
