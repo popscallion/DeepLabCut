@@ -5,6 +5,7 @@ import warnings
 import importlib
 import cv2
 import ruamel.yaml
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import deeplabcut as dlc
@@ -344,3 +345,18 @@ class Project:
         df = df.reindex(columns=bodyparts_XY)
         df.to_csv(os.path.splitext(hdf_path)[0]+'_split'+'.csv',index=False)
         return extracted_frames
+
+    def plotLoss(self, learning_stats_path):
+        df=pd.read_csv(learning_stats_path,sep=',',header=None,names=['iteration','loss','lr'],dtype='float',na_values='NaN')
+        fig, ax1 = plt.subplots(1, 1, figsize=(8,4))
+        ax1.plot(df['iteration'],df['loss'],'b')
+        ax2=ax1.twinx()
+        ax2.plot(df['iteration'],df['lr'],'g')
+        ax1.set_xlabel(r'Iteration', fontsize=10)
+        ax1.set_ylabel(r'Loss', fontsize=10, color='blue')
+        ax2.set_ylabel(r'Learning rate', fontsize=10, color='green')
+        ax1.tick_params(labelsize=10)
+        ax2.tick_params(labelsize=10)
+        fig.tight_layout()
+        plt.show()
+        return fig
