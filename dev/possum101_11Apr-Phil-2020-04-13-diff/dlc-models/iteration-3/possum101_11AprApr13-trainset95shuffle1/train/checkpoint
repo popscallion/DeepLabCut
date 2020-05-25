@@ -1,0 +1,2 @@
+model_checkpoint_path: "C:\\Users\\Phil\\Development\\DeepLabCut\\dev\\possum101_11Apr-Phil-2020-04-13-diff\\dlc-models\\iteration-3\\possum101_11AprApr13-trainset95shuffle1\\train\\snapshot-5"
+all_model_checkpoint_paths: "C:\\Users\\Phil\\Development\\DeepLabCut\\dev\\possum101_11Apr-Phil-2020-04-13-diff\\dlc-models\\iteration-3\\possum101_11AprApr13-trainset95shuffle1\\train\\snapshot-5"
