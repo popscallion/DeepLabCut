@@ -11,8 +11,6 @@ video_sets:
   Z:\lab\NSF forelimb project\Phil_lab\C-arm\Ex\11Apr18.LaiRegnault.SEP101.LS.biceps_teres_lat\11Apr_diff.mp4:
     crop: 0, 1024, 0, 1024
 
-  ? \\rcstore02.rc.fas.harvard.edu\spierce_lab\lab\NSF forelimb project\Phil_lab\C-arm\Ex\11Apr18.LaiRegnault.SEP101.LS.biceps_teres_lat\11Apr_diff.mp4
-  : crop: 0, 1024, 0, 1024
 bodyparts:
 - Body_ds1_crn_cam1
 - Body_ds1_crn_cam2
@@ -77,7 +75,7 @@ colormap: jet
 # Training,Evaluation and Analysis configuration
 TrainingFraction:
 - 0.95
-iteration: 0
+iteration: 2
 resnet: 50
 snapshotindex: -1
 batch_size: 8
