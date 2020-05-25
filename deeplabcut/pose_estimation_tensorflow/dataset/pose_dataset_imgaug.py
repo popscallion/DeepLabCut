@@ -155,6 +155,12 @@ class PoseDataset:
                 crop_by = cfg.get('crop_by', False)
             pipeline.add(iaa.Sometimes(cfg.cropratio,iaa.CropAndPad(percent=(-crop_by, crop_by),keep_size=False)))
             pipeline.add(iaa.Resize({"height": height, "width": width}))
+        if cfg.get('gamma', False):
+            pipeline.add(sometimes(iaa.GammaContrast((0.5, 2.0), per_channel=True)))
+        if cfg.get('logcontrast', False):
+            pipeline.add(sometimes(iaa.LogContrast(gain=(0.6, 1.4), per_channel=True)))
+        if cfg.get('allchannelsclahe', False):
+            pipeline.add(sometimes(iaa.AllChannelsCLAHE(clip_limit=(1, 10), per_channel=True)))
         return pipeline
 
     def get_batch(self):
