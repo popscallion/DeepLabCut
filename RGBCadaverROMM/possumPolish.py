@@ -264,16 +264,31 @@ class Project:
             self.deleteLabeledFrames(self.dirs['labeled'])
             self.spliceXma2Dlc(self.vids_merged[0], csv_path, self.env['outlier_indices'], outlier_mode=True)
         print("imported digitized outliers! merging datasets...")
-        dlc.merge_datasets(self.yaml)
+        dlc.merge_datasets(self.yaml)NONONO
         print("merged imported outliers. creating new training set...")
+
+    def mergeOutliers(self):
+        # Merged CollectedData_[experimenter].h5 with MachineLabelsRefine.h5. Renames original CollectedData_[experimenter].h5 and sets it aside.
+        df0 = pd.read_hdf(os.path.join(self.dirs['spliced'],("CollectedData_"+self.experimenter+".h5")),"df_with_missing")
+        df1 = pd.read_hdf(os.path.join(self.dirs['spliced'],("MachineLabelsRefine.h5")),"df_with_missing")
+        df_combined = pd.concat([df0, df1])
+        df_combined.sort_index(inplace=True)
+        os.rename(os.path.join(self.dirs['spliced'],("CollectedData_"+self.experimenter+".h5")),os.path.join(self.dirs['spliced'],("old_CollectedData_"+self.experimenter+".h5")))
+        os.rename(os.path.join(self.dirs['spliced'],("CollectedData_"+self.experimenter+".csv")),os.path.join(self.dirs['spliced'],("old_CollectedData_"+self.experimenter+".csv")))
+        df_combined.to_hdf(
+            os.path.join(self.dirs['spliced'],("CollectedData_"+self.experimenter+".h5")),
+            key="df_with_missing",
+            mode="w"
+        )
+        df_combined.to_csv(
+            os.path.join(self.dirs['spliced'],("CollectedData_"+self.experimenter+".csv"))
+        )
 
     def deleteLabeledFrames(self, dir):
         frame_list = self.scanDir(dir, extension='png', filters=['labeled'], filter_out=False)
         for frame in frame_list:
             os.remove(frame)
         print("deleted "+str(len(frame_list))+" labeled frames!")
-
-
 
 
     def spliceXma2Dlc(self, substitute_video, csv_path, frame_indices, outlier_mode=False):
