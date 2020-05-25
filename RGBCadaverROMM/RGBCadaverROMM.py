@@ -11,11 +11,13 @@ import numpy as np
 import re
 import possumPolish
 
+
 importlib.reload(possumPolish)
 
 model = possumPolish.Project() #0. define a new project
 model.load('dv101',r"C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\config.yaml") # 1. create a new dlc project with raw videos, extract 20 frames with k-means from each video, grab 40 frames total from each of two vids, stores frame paths and indices in frame_log.yaml
 #2. now go away and digitize the 40 frames in xmalab
+
 model.importXma() #3. come back and substitute merged video for raw vids
 # model.dlc.check_labels(model.yaml) ##4. optionally, check to see if labels are plotting correctly
 # dlc.create_training_dataset(model.yaml, augmenter_type="imgaug") ##5. make training set
@@ -23,13 +25,26 @@ model.importXma() #3. come back and substitute merged video for raw vids
 dlc.evaluate_network(model.yaml, plotting=True)
 dlc.analyze_videos(model.yaml,[r"Z:\lab\NSF forelimb project\Phil_lab\dlc-data-swap\11Apr_diff.mp4"])
 dlc.create_labeled_video(model.yaml,[r"Z:\lab\NSF forelimb project\Phil_lab\dlc-data-swap\11Apr_diff.mp4"])
-dlc.extract_outlier_frames(model.yaml,[r"Z:\lab\NSF forelimb project\Phil_lab\dlc-data-swap\11Apr_diff.mp4"],outlieralgorithm='jump', extractionalgorithm='kmeans', automatic=True, epsilon=30, comparisonbodyparts=['Ulna_olc_cam1','Ulna_dst_cam1','Radius_prx_cam1','Radius_dst_cam1','Humerus_ent_cam1','Humerus_ect_cam1'])
 
 
 
 model.getOutliers()
+# go away and dgitize some more again
+model.importXmaOutliers()
+#OPTIONAL
+model.dlc.check_labels(model.yaml)
 
 
+
+
+
+
+
+
+
+model.dlc.merge_datasets(model.yaml)
+model.dlc.check_labels(model.yaml)
+model.dlc.create_training_dataset(model.yaml, augmenter_type="imgaug")
 
 ##make create training dataset and train
 ###SUNDAY:
@@ -41,6 +56,7 @@ model.getOutliers()
 store dir paths in framelog.yaml. write for new project and update for existing
 ##wishlist: mover helper to overwrite project paths in pose_cfg and config
 ##wishlist: new file deleter
+#wishlist: function to delete original extracted frame folders
 
 
 trainposeconfigfile,testposeconfigfile,snapshotfolder=deeplabcut.return_train_network_path(path_config_file,1,0.95)
