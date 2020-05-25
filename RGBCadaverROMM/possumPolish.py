@@ -54,6 +54,7 @@ class Project:
         self.env_path = os.path.join(self.wd,'environment.yaml')
         if os.path.exists(self.env_path):
             self.env = ruamel.yaml.load(open(self.env_path))
+            self.dirs['spliced'] = os.path.join(self.dirs['labeled'],os.path.splitext(os.path.basename(self.vids_merged[0]))[0])
         else:
             self.env = self.updateEnv()
         return self.env
@@ -78,7 +79,6 @@ class Project:
                                     epsilon=self.outlier_epsilon,
                                     comparisonbodyparts=[self.markers[21], self.markers[23], self.markers[25], self.markers[29],self.markers[31],self.markers[35]],
                                     savelabeled=make_labels   )
-        self.dirs['spliced'] = os.path.join(self.dirs['labeled'],os.path.splitext(os.path.basename(self.vids_merged[0]))[0])
         self.env['outlier_indices'] = self.getOutlierIndices(self.dirs['spliced'])
         self.env['outlier_frames'] = self.extractMatchedFrames(self.env['outlier_indices'], output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_outlier')
         self.updateEnv()
@@ -264,8 +264,11 @@ class Project:
             self.deleteLabeledFrames(self.dirs['labeled'])
             self.spliceXma2Dlc(self.vids_merged[0], csv_path, self.env['outlier_indices'], outlier_mode=True)
         print("imported digitized outliers! merging datasets...")
-        dlc.merge_datasets(self.yaml)NONONO
+        self.dlc.merge_datasets(self.yaml)
+        self.mergeOutliers()
         print("merged imported outliers. creating new training set...")
+        self.dlc.create_training_dataset(self.yaml)
+
 
     def mergeOutliers(self):
         # Merged CollectedData_[experimenter].h5 with MachineLabelsRefine.h5. Renames original CollectedData_[experimenter].h5 and sets it aside.
