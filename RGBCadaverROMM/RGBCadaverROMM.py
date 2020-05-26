@@ -11,9 +11,6 @@ import numpy as np
 import re
 import possumPolish
 
-tf.__version__
-sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
-
 
 
 importlib.reload(possumPolish)
@@ -21,17 +18,10 @@ importlib.reload(possumPolish)
 model = possumPolish.Project() #0. define a new project
 model.load('dv101',r"C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\config.yaml") # 1. create a new dlc project with raw videos, extract 20 frames with k-means from each video, grab 40 frames total from each of two vids, stores frame paths and indices in frame_log.yaml
 #2. now go away and digitize the 40 frames in xmalab
-
 model.importXma() #3. come back and substitute merged video for raw vids
 # model.dlc.check_labels(model.yaml) ##4. optionally, check to see if labels are plotting correctly
-# dlc.create_training_dataset(model.yaml, augmenter_type="imgaug") ##5. make training set
-# deeplabcut.train_network(model.yaml, displayiters=10,saveiters=10000, maxiters=200000) ##6. Train network
-dlc.evaluate_network(model.yaml, plotting=True)
-dlc.analyze_videos(model.yaml,[r"Z:\lab\NSF forelimb project\Phil_lab\dlc-data-swap\11Apr_diff.mp4"])
-dlc.create_labeled_video(model.yaml,[r"Z:\lab\NSF forelimb project\Phil_lab\dlc-data-swap\11Apr_diff.mp4"])
-
-
-
+# model.dlc.create_training_dataset(model.yaml, augmenter_type="imgaug") ##5. make training set
+# model.dlc.train_network(model.yaml, displayiters=10,saveiters=10000, maxiters=200000) ##6. Train network
 model.getOutliers()
 # go away and dgitize some more again
 model.importXmaOutliers()
@@ -40,15 +30,25 @@ model.dlc.check_labels(model.yaml)
 
 
 
-model.dlc.train_network(model.yaml, saveiters=10000,displayiters=20,maxiters=300000,max_snapshots_to_keep=30)
+model.dlc.train_network(model.yaml, saveiters=5000,displayiters=50,maxiters=300000,max_snapshots_to_keep=30)
+model.dlc.evaluate_network(model.yaml, plotting=True)
+model.dlc.analyze_videos(model.yaml,[model.vids_merged[0]])
+model.dlc.create_labeled_video(model.yaml,[model.vids_merged[0]])
+model.dlc.filterpredictions
+
+model.dlc.filterpredictions(model.yaml,[model.vids_merged[0]], filtertype="arima",ARdegree=1,alpha=0.05)
+model.dlc.create_labeled_video(model.yaml,[model.vids_merged[0]],filtered=True)
 
 
 
+
+model.vids_merged[0]
 ##make create training dataset and train
 ###SUNDAY:
 #extract outlier frames from individual vids, and bundle into a function
 #digitize outliers and retrain model
 #bundle training and evaluation into function
+#make loss plotter
 ###MONDAY:
 #refine
 store dir paths in framelog.yaml. write for new project and update for existing
