@@ -36,7 +36,7 @@ model.dlc.analyze_videos(model.yaml,[model.vids_merged[0]])
 model.dlc.create_labeled_video(model.yaml,[model.vids_merged[0]])
 model.dlc.filterpredictions
 
-model.dlc.filterpredictions(model.yaml,[model.vids_merged[0]], filtertype="arima",ARdegree=1,alpha=0.05)
+model.dlc.filterpredictions(model.yaml,[model.vids_merged[0]], filtertype="spline",window=17)
 model.dlc.create_labeled_video(model.yaml,[model.vids_merged[0]],filtered=True)
 
 
