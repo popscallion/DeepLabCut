@@ -1,7 +1,6 @@
 import os
 import re
 import sys
-import datetime
 import warnings
 import importlib
 import cv2
@@ -11,14 +10,6 @@ import numpy as np
 import pandas as pd
 import deeplabcut as dlc
 
-# store iteration count in config file? then every list of frames has an iteration count associated with it
-# dont store frame paths
-# need some way to check before and after file state!
-# also store timestamp for iterations!
-# so actually: need 2 things in parallel: some wrapper function that enumerates files created by dlc w/ before and after file lists, and a timestamped list of what operation was called when
-# frames for xmalab folder needs to be numbered with iteration count
-#step 1: start new project for dv101
-
 class Project:
     def __init__(self):
         self.profile_path = r'.\profiles.yaml'
@@ -27,6 +18,7 @@ class Project:
         self.outlier_epsilon = 30
         self.outlier_algo = 'fitting'
         self.yaml = None
+        self.env_path = None
         self.wd = None
         self.experiment = None
         self.experimenter = None
@@ -34,7 +26,7 @@ class Project:
         self.dirs = {}
         self.vids_separate = []
         self.vids_merged = []
-        self.config = {}
+        self.env = {}
         self.dlc = dlc
 
     def load(self, profile=None, yaml=None):
@@ -46,7 +38,7 @@ class Project:
         self.getProfile(id)
         if yaml:
             self.yaml = yaml
-            self.updateConfig()
+            self.getEnv()
         else:
             status = input("Type 'new' to start a new project, or enter the full path to an existing config.yaml to continue with an existing project. Type 'quit' to quit.").strip('"')
             if status == "new":
@@ -55,76 +47,18 @@ class Project:
                 sys.exit("Pipeline terminated.")
             else:
                 self.yaml = status
-                self.updateConfig()
+                self.getEnv()
 
-
-    def createExtractMatch(self):
-        # Creates new DeepLabCut project, overwrites default config.yaml, and performs initial frame extraction.
-        task = input("Name your project (no spaces, no periods)")
-        wd = input("Project path? This is where you want the folder containing your project to live.").strip('"')
-        vid_format = os.path.splitext(self.vids_separate[0])[1]
-        self.yaml = dlc.create_new_project(task,self.experimenter,self.vids_separate, working_directory=wd, videotype=vid_format, copy_videos=True)
-        self.getDirs()
-        self.updateConfig(bodyparts=self.markers, numframes2pick=self.num_to_extract, corner2move2=self.corner2move2)
-        extracted_frames = self.updateWithFiles('extract', self.trackFiles, dlc.extract_frames, self.dirs['labeled'], self.yaml, userfeedback=False)
-        extracted_indices = self.matchFrames(extracted_frames) #get indices of extracted frames
-        matched_frames = self.updateWithFiles('match', self.extractMatchedFrames, extracted_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_matched')
-
-
-    def updateWithFiles(self, type, func, *args, **kwargs):
-        ts = self.getTimeStamp()
-        list_of_files = func(*args, **kwargs)
-        update = {ts:{'operation':type,'files':list_of_files}}
-        self.updateConfig(event=update)
-        return list_of_files
-
-    def getDirs(self):
-        # Stores paths to directories created by DeepLabCut.create_new_project. Makes new directory to store frames extracted for XMALab.
+    def getEnv(self):
         self.wd = os.path.dirname(self.yaml)
-        self.dirs['model'] = os.path.join(self.wd,"dlc-models")
-        self.dirs['evaluation'] = os.path.join(self.wd,"evaluation-results")
-        self.dirs['labeled'] = os.path.join(self.wd,"labeled-data")
-        self.dirs['spliced'] = os.path.join(self.dirs['labeled'],os.path.splitext(os.path.basename(self.vids_merged[0]))[0])
-        self.dirs['training'] = os.path.join(self.wd,"training-datasets")
-        self.dirs['video'] = os.path.join(self.wd,"videos")
-        self.dirs['xma'] = os.path.join(self.wd,"frames-for-xmalab")
-        os.makedirs(self.dirs['xma'], exist_ok=True)
-
-    def trackFiles(self, func, directory, *args, **kwargs):
-        def getSnapshot(directory):
-            snapshot = []
-            for root, dirs, files in os.walk(directory):
-                for name in files:
-                    file_path = os.path.join(root, name)
-                    snapshot.append(file_path)
-            return snapshot
-        def diff(pre, post):
-            return set(post).difference(set(pre))
-        snapshot_pre = getSnapshot(directory)
-        func(*args, **kwargs)
-        snapshot_post = getSnapshot(directory)
-        result = diff(snapshot_pre, snapshot_post)
-        return list(result)
-
-
-    def getProfile(self, id):
-        # Interactively chooses an animal/experiment profile from a list of presets (profiles.yaml).
-        profiles = ruamel.yaml.load(open(self.profile_path))
-        if id == "quit":
-            sys.exit("Pipeline terminated.")
+        self.getDirs()
+        self.env_path = os.path.join(self.wd,'environment.yaml')
+        if os.path.exists(self.env_path):
+            self.env = ruamel.yaml.load(open(self.env_path))
+            self.dirs['spliced'] = os.path.join(self.dirs['labeled'],os.path.splitext(os.path.basename(self.vids_merged[0]))[0])
         else:
-            if id in profiles:
-                spec_data = profiles[id]
-                markers = spec_data['markers']
-                for marker in markers:
-                    self.markers.append(marker+'_cam1')
-                    self.markers.append(marker+'_cam2')
-                self.experiment = spec_data['experiment']
-                self.experimenter = spec_data['experimenter']
-                self.vids_separate = spec_data['vids_separate']
-                self.vids_merged = spec_data['vids_merged']
-            else:
-                sys.exit("Profile does not exist in profiles.yaml")
+            self.env = self.updateEnv()
+        return self.env
 
     def getOutliers(self, make_labels=False):
         if make_labels:
@@ -153,42 +87,70 @@ class Project:
 
 
 
-    def updateConfig(self, event={}, videos=[],bodyparts=[],numframes2pick=None,corner2move2=None):
+    def createExtractMatch(self):
+        # Creates new DeepLabCut project, overwrites default config.yaml, and performs initial frame extraction.
+        task = input("Name your project (no spaces, no periods)")
+        wd = input("Project path? This is where you want the folder containing your project to live.").strip('"')
+        vid_format = os.path.splitext(self.vids_separate[0])[1]
+        self.yaml = dlc.create_new_project(task,self.experimenter,self.vids_separate, working_directory=wd, videotype=vid_format, copy_videos=True)
+        self.updateConfig(bodyparts=self.markers, numframes2pick=self.num_to_extract, corner2move2=self.corner2move2)
+        dlc.extract_frames(self.yaml, userfeedback=False)  #puts extracted frames in .\labeled-data\{video-name}
+        self.getEnv()
+        self.env['extracted_indices'] = self.matchFrames(self.dirs['labeled']) #get indices of extracted frames
+        self.env['extracted_frames'] = self.extractMatchedFrames(self.env['extracted_indices'], output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_matched')
+        self.updateEnv()
+
+    def getDirs(self):
+        # Stores paths to directories created by DeepLabCut.create_new_project. Makes new directory to store frames extracted for XMALab.
+        self.dirs['model'] = os.path.join(self.wd,"dlc-models")
+        self.dirs['evaluation'] = os.path.join(self.wd,"evaluation-results")
+        self.dirs['labeled'] = os.path.join(self.wd,"labeled-data")
+        self.dirs['training'] = os.path.join(self.wd,"training-datasets")
+        self.dirs['video'] = os.path.join(self.wd,"videos")
+        self.dirs['xma'] = os.path.join(self.wd,"frames-for-xmalab")
+        self.dirs['spliced'] = None
+        os.makedirs(self.dirs['xma'], exist_ok=True)
+
+    def getProfile(self, id):
+        # Interactively chooses an animal/experiment profile from a list of presets (profiles.yaml).
+        profiles = ruamel.yaml.load(open(self.profile_path))
+        if id == "quit":
+            sys.exit("Pipeline terminated.")
+        else:
+            if id in profiles:
+                spec_data = profiles[id]
+                markers = spec_data['markers']
+                for marker in markers:
+                    self.markers.append(marker+'_cam1')
+                    self.markers.append(marker+'_cam2')
+                self.experiment = spec_data['experiment']
+                self.experimenter = spec_data['experimenter']
+                self.vids_separate = spec_data['vids_separate']
+                self.vids_merged = spec_data['vids_merged']
+            else:
+                sys.exit("Profile does not exist in profiles.yaml")
+
+    def updateConfig(self, videos=[],bodyparts=[],numframes2pick=None,corner2move2=None):
         # Updates config.yaml with arguments (if supplied).
-        self.config = ruamel.yaml.load(open(self.yaml))
-        if event:
-            if 'history' not in self.config:
-                self.config['history'] = {}
-            self.config['history'].update(event)
+        config = ruamel.yaml.load(open(self.yaml))
         if videos:
             video_sets={video:{"crop":"0, 1024, 0, 1024"} for video in videos}
-            self.config['video_sets']=video_sets
+            config['video_sets']=video_sets
         if bodyparts:
-            self.config['bodyparts']=bodyparts
+            config['bodyparts']=bodyparts
         if numframes2pick:
-            self.config['numframes2pick']=numframes2pick
+            config['numframes2pick']=numframes2pick
         if corner2move2:
-            self.config['corner2move2']=[corner2move2,corner2move2]
-        # ruamel.yaml.round_trip_dump(self.config, sys.stdout)
+            config['corner2move2']=[corner2move2,corner2move2]
+        ruamel.yaml.round_trip_dump(config, sys.stdout)
         with open(self.yaml, 'w') as file:
-            ruamel.yaml.round_trip_dump(self.config, file)
+            ruamel.yaml.round_trip_dump(config, file)
 
-    def cleanup(self, event):
-        self.config = ruamel.yaml.load(open(self.yaml))
-        dirs = []
-        for path in self.config['history'][event]['files']:
-            dir = os.path.dirname(path)
-            if dir not in dirs:
-                dirs.append(dir)
-            if os.path.exists(path):
-                os.remove(path)
-            else:
-                print("File not found: "+path)
-        for dir in dirs:
-            os.rmdir(dir)
-        self.config['history'].pop(event, None)
-        with open(self.yaml, 'w') as file:
-            ruamel.yaml.round_trip_dump(self.config, file)
+    def updateEnv(self):
+        # Stores frame indices and paths in the project directory as environment.yaml.
+        with open(self.env_path, 'w') as file:
+            ruamel.yaml.dump(self.env, file)
+        return self.env
 
     def scanDir(self, directory, extension, filters=[], filter_out=True, verbose=False):
         # Recurses through a directory looking for files with a certain extension, with optional filtering behavior. Returns list of paths.
@@ -255,19 +217,11 @@ class Project:
         print("done!")
         return png_list
 
-    def getTimeStamp(self):
-        ts = datetime.datetime.now().strftime("%d%b%y_%Hh%Mm%Ss")
-        return ts
-
-    def filterByExtension(self, list, extension):
-        filtered_list = [path for path in list if extension in os.path.splitext(path)[1]]
-        return filtered_list
-
-    def matchFrames(self, list):
-        # Recurses through a list of paths looking for unique frame numbers, returns a list of indices.
-        frame_list = self.filterByExtension(list, extension = 'png')
-        extracted_indices = [int(os.path.splitext(os.path.basename(png))[0][3:].lstrip('0')) for png in frame_list]
-        unique_indices = [index for index in extracted_indices]
+    def matchFrames(self, extracted_dir):
+        # Recurses through a directory of pngs looking for unique frame numbers, returns a list of indices.
+        extracted_files = self.scanDir(extracted_dir, extension='png')
+        extracted_indices = [int(os.path.splitext(os.path.basename(png))[0][3:].lstrip('0')) for png in extracted_files]
+        unique_indices = list({index for index in extracted_indices})
         result = sorted(unique_indices)
         return result
 
@@ -282,8 +236,7 @@ class Project:
             output = os.path.join(output_dir,out_name)
             frames_from_vid = self.vidToPngs(video, output, indices_to_match=indices, name_from_folder=False)
             extracted_frames.append(frames_from_vid)
-        combined_list = [y for x in extracted_frames for y in x]
-        return combined_list
+        return extracted_frames
 
     def getOutlierIndices(self, dir):
     	extracted_files = self.scanDir(dir, extension='png')
