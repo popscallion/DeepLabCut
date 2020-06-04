@@ -20,8 +20,6 @@ list(model.config['history'].keys())[0]
 model.cleanup(list(model.config['history'].keys())[0])
 
 
-
-
 model.load('dv101',r"C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\config.yaml") # 1. create a new dlc project with raw videos, extract 20 frames with k-means from each video, grab 40 frames total from each of two vids, stores frame paths and indices in frame_log.yaml
 #2. now go away and digitize the 40 frames in xmalab
 model.importXma() #3. come back and substitute merged video for raw vids
