@@ -65,7 +65,7 @@ class Project:
         self.updateConfig(bodyparts=self.markers, numframes2pick=self.num_to_extract, corner2move2=self.corner2move2)
         extracted_frames = self.updateWithFunc('extract', self.trackFiles, self.dirs['labeled'], dlc.extract_frames, self.yaml, userfeedback=False)
         extracted_indices = self.matchFrames(extracted_frames) #get indices of extracted frames
-        matched_frames = self.updateWithFunc('match_extracted', self.extractMatchedFrames, extracted_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_matched')
+        matched_frames = self.updateWithFunc('match_extracted', self.extractMatchedFrames, extracted_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_matched', timestamp=True)
         print("Succesfully created a new DeepLabCut project and performed initial frame extraction. Frames for XMALab are in "+str(self.dirs['xma']))
 
     def updateWithFunc(self, type, func, *args, **kwargs):
@@ -78,7 +78,7 @@ class Project:
 
     def updateWithFiles(self, type, list_of_paths):
         ts = self.getTimeStamp()
-        update = {ts:{'operation':type,'files':list_of_files}}
+        update = {ts:{'operation':type,'files':list_of_paths}}
         self.updateConfig(event=update)
         print("Updated config.yaml with event "+type+" at "+ts)
 
@@ -160,7 +160,7 @@ class Project:
                                                                         self.markers[29],self.markers[31],self.markers[35]  ],
                                                 savelabeled=make_labels)
         outlier_indices = self.matchFrames([outliers_cam1,outliers_cam2])
-        matched_outlier_frames = self.updateWithFunc('match_outliers', self.extractMatchedFrames, outlier_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_matched')
+        matched_outlier_frames = self.updateWithFunc('match_outliers', self.extractMatchedFrames, outlier_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_matched', timestamp=True)
         self.splitDlc2Xma(os.path.join(self.dirs['spliced'],'machinelabels-iter0.h5'), self.markers)
 
     def updateConfig(self, event={}, videos=[],bodyparts=[],numframes2pick=None,corner2move2=None):
@@ -189,6 +189,9 @@ class Project:
 
     def cleanup(self, event):
         self.config = ruamel.yaml.load(open(self.yaml))
+        if event not in self.config['history']:
+            print('Not found in log')
+            return
         dirs = []
         files_deleted = []
         for path in self.config['history'][event]['files']:
@@ -202,7 +205,7 @@ class Project:
                 print("File not found: "+path)
         for dir in dirs:
             os.rmdir(dir)
-        print("Deleted "+str(len(files_deleted))+" files and "+str(len(dirs))+" associated with operation "+str(self.config['history'][event]['operation'])+" at "+event)
+        print("Deleted "+str(len(files_deleted))+" files and "+str(len(dirs))+" directories associated with operation "+str(self.config['history'][event]['operation'])+" at "+event)
         self.config['history'].pop(event, None)
         with open(self.yaml, 'w') as file:
             ruamel.yaml.round_trip_dump(self.config, file)
@@ -282,22 +285,25 @@ class Project:
 
     def matchFrames(self, list):
         # Recurses through a list of paths looking for unique frame numbers, returns a list of indices.
-        combined_list = [y for x in list for y in x]
-        frame_list = self.filterByExtension(combined_list, extension = 'png')
+        frame_list = self.filterByExtension(list, extension = 'png')
         extracted_indices = [int(os.path.splitext(os.path.basename(png))[0][3:].lstrip('0')) for png in frame_list]
         unique_indices = [index for index in extracted_indices]
         result = sorted(unique_indices)
         print("Found "+str(len(result))+" unique frame indices")
         return result
 
-    def extractMatchedFrames(self, indices, output_dir, src_vids=[], folder_suffix=None):
+    def extractMatchedFrames(self, indices, output_dir, src_vids=[], folder_suffix=None, timestamp=False):
         # Given a list of frame indices and a list of source videos, produces one folder of matching frame pngs per source video.
         extracted_frames = []
+        if timestamp:
+            ts = '_'+self.getTimeStamp()
+        else:
+            ts = ''
         for video in src_vids:
             if folder_suffix:
-                out_name = os.path.splitext(os.path.basename(video))[0]+folder_suffix
+                out_name = os.path.splitext(os.path.basename(video))[0]+folder_suffix+ts
             else:
-                out_name = os.path.splitext(os.path.basename(video))[0]
+                out_name = os.path.splitext(os.path.basename(video))[0]+ts
             output = os.path.join(output_dir,out_name)
             frames_from_vid = self.vidToPngs(video, output, indices_to_match=indices, name_from_folder=False)
             extracted_frames.append(frames_from_vid)
@@ -307,14 +313,13 @@ class Project:
 
     def importXma(self, event, csv_path=None, outlier_mode=False):
         # Interactively imports labels from XMALab by substituting frames from merged video for original raw frames. Updates config.yaml to point to substituted video.
-        operation = self.config['history'][event]['operation']
         if not csv_path:
             csv_path = input("Enter the full path to XMALab 2D XY coordinates csv, or type 'quit' to abort.").strip('"')
         if csv_path == "quit":
             sys.exit("Pipeline terminated.")
         indices_to_import = self.matchFrames(self.config['history'][event]['files'])
         spliced_markers = self.spliceXma2Dlc(self.vids_merged[0], csv_path, indices_to_import, outlier_mode)
-        self.extractMatchedFrames(self.env['extracted_indices'], output_dir=self.dirs['labeled'], src_vids=self.vids_merged)
+        self.extractMatchedFrames(indices_to_import, output_dir=self.dirs['labeled'], src_vids=self.vids_merged)
         self.updateConfig(videos=self.vids_merged, bodyparts=spliced_markers)
         if outlier_mode:
             self.deleteLabeledFrames(self.dirs['labeled'])
@@ -322,21 +327,6 @@ class Project:
             self.mergeOutliers()
             self.dlc.create_training_dataset(self.yaml)
             # maybe track and print? not sure yet
-
-
-    # def importXmaOutliers(self):
-    #     # Interactively imports digitized outlier frames from XMALab.
-    #     csv_path = input("Enter the full path to XMALab 2D XY coordinates csv, or type 'quit' to abort.").strip('"')
-    #     if csv_path == "quit":
-    #         sys.exit("Pipeline terminated.")
-    #     else:
-    #         self.deleteLabeledFrames(self.dirs['labeled'])
-    #         self.spliceXma2Dlc(self.vids_merged[0], csv_path, self.env['outlier_indices'], outlier_mode=True)
-    #     print("imported digitized outliers! merging datasets...")
-    #     self.dlc.merge_datasets(self.yaml)
-    #     self.mergeOutliers()
-    #     print("merged imported outliers. creating new training set...")
-    #     self.dlc.create_training_dataset(self.yaml)
 
 
     def mergeOutliers(self):
@@ -391,7 +381,7 @@ class Project:
             os.mkdir(substitute_data_abspath)
         if outlier_mode:
             data_name = os.path.join(substitute_data_abspath,"MachineLabelsRefine.h5")
-            tracked_hdf = os.path.join(substitute_data_abspath,"MachineLabelsRefine_",ts,".h5")
+            tracked_hdf = os.path.join(substitute_data_abspath,("MachineLabelsRefine_"+ts+".h5"))
         else:
             data_name = os.path.join(substitute_data_abspath,("CollectedData_"+self.experimenter+".h5"))
             tracked_hdf = os.path.join(substitute_data_abspath,("CollectedData_"+self.experimenter+"_"+ts+".h5"))
