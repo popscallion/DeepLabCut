@@ -11,13 +11,8 @@ import numpy as np
 import pandas as pd
 import deeplabcut as dlc
 
-# store iteration count in config file? then every list of frames has an iteration count associated with it
-# dont store frame paths
-# need some way to check before and after file state!
-# also store timestamp for iterations!
-# so actually: need 2 things in parallel: some wrapper function that enumerates files created by dlc w/ before and after file lists, and a timestamped list of what operation was called when
-# frames for xmalab folder needs to be numbered with iteration count
-#step 1: start new project for dv101
+#make sure split and splice functions are wrapped in file tracker if necessary
+
 
 class Project:
     def __init__(self):
@@ -46,6 +41,7 @@ class Project:
         self.getProfile(id)
         if yaml:
             self.yaml = yaml
+            self.getDirs()
             self.updateConfig()
         else:
             status = input("Type 'new' to start a new project, or enter the full path to an existing config.yaml to continue with an existing project. Type 'quit' to quit.").strip('"')
@@ -55,6 +51,7 @@ class Project:
                 sys.exit("Pipeline terminated.")
             else:
                 self.yaml = status
+                self.getDirs()
                 self.updateConfig()
 
 
@@ -66,9 +63,9 @@ class Project:
         self.yaml = dlc.create_new_project(task,self.experimenter,self.vids_separate, working_directory=wd, videotype=vid_format, copy_videos=True)
         self.getDirs()
         self.updateConfig(bodyparts=self.markers, numframes2pick=self.num_to_extract, corner2move2=self.corner2move2)
-        extracted_frames = self.updateWithFiles('extract', self.trackFiles, dlc.extract_frames, self.dirs['labeled'], self.yaml, userfeedback=False)
+        extracted_frames = self.updateWithFiles('extract', self.trackFiles, self.dirs['labeled'], dlc.extract_frames, self.yaml, userfeedback=False)
         extracted_indices = self.matchFrames(extracted_frames) #get indices of extracted frames
-        matched_frames = self.updateWithFiles('match', self.extractMatchedFrames, extracted_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_matched')
+        matched_frames = self.updateWithFiles('match_extracted', self.extractMatchedFrames, extracted_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_matched')
 
 
     def updateWithFiles(self, type, func, *args, **kwargs):
@@ -90,7 +87,7 @@ class Project:
         self.dirs['xma'] = os.path.join(self.wd,"frames-for-xmalab")
         os.makedirs(self.dirs['xma'], exist_ok=True)
 
-    def trackFiles(self, func, directory, *args, **kwargs):
+    def trackFiles(self, directory, func, *args, **kwargs):
         def getSnapshot(directory):
             snapshot = []
             for root, dirs, files in os.walk(directory):
@@ -105,7 +102,6 @@ class Project:
         snapshot_post = getSnapshot(directory)
         result = diff(snapshot_pre, snapshot_post)
         return list(result)
-
 
     def getProfile(self, id):
         # Interactively chooses an animal/experiment profile from a list of presets (profiles.yaml).
@@ -130,28 +126,32 @@ class Project:
         if make_labels:
             self.deleteLabeledFrames(self.dirs['labeled'])
         # Runs 2 passes of extract_outlier_frames, focusing on distal markers for cam1 and cam2 respectively.
-        dlc.extract_outlier_frames( self.yaml,
-                                    self.vids_merged,
-                                    outlieralgorithm=self.outlier_algo,
-                                    extractionalgorithm='kmeans',
-                                    automatic=True,
-                                    epsilon=self.outlier_epsilon,
-                                    comparisonbodyparts=[self.markers[20], self.markers[22], self.markers[24], self.markers[28],self.markers[30],self.markers[34]],
-                                    savelabeled=make_labels   )
-        dlc.extract_outlier_frames( self.yaml,
-                                    self.vids_merged,
-                                    outlieralgorithm=self.outlier_algo,
-                                    extractionalgorithm='kmeans',
-                                    automatic=True,
-                                    epsilon=self.outlier_epsilon,
-                                    comparisonbodyparts=[self.markers[21], self.markers[23], self.markers[25], self.markers[29],self.markers[31],self.markers[35]],
-                                    savelabeled=make_labels   )
-        self.env['outlier_indices'] = self.getOutlierIndices(self.dirs['spliced'])
-        self.env['outlier_frames'] = self.extractMatchedFrames(self.env['outlier_indices'], output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_outlier')
-        self.updateEnv()
+        outliers_cam1 = self.updateWithFiles('outliers_cam1', self.trackFiles, self.dirs['spliced'],
+                                                dlc.extract_outlier_frames,
+                                                self.yaml,
+                                                self.vids_merged,
+                                                outlieralgorithm=self.outlier_algo,
+                                                extractionalgorithm='kmeans',
+                                                automatic=True,
+                                                epsilon=self.outlier_epsilon,
+                                                comparisonbodyparts=[   self.markers[20], self.markers[22], self.markers[24],
+                                                                        self.markers[28],self.markers[30],self.markers[34]  ],
+                                                savelabeled=make_labels)
+
+        outliers_cam2 = self.updateWithFiles('outliers_cam2', self.trackFiles, self.dirs['spliced'],
+                                                dlc.extract_outlier_frames,
+                                                self.yaml,
+                                                self.vids_merged,
+                                                outlieralgorithm=self.outlier_algo,
+                                                extractionalgorithm='kmeans',
+                                                automatic=True,
+                                                epsilon=self.outlier_epsilon,
+                                                comparisonbodyparts=[   self.markers[21], self.markers[23], self.markers[25],
+                                                                        self.markers[29],self.markers[31],self.markers[35]  ],
+                                                savelabeled=make_labels)
+        outlier_indices = self.getOutlierIndices([outliers_cam1,outliers_cam2])
+        matched_outlier_frames = self.updateWithFiles('match_outliers', self.extractMatchedFrames, outlier_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_matched')
         self.splitDlc2Xma(os.path.join(self.dirs['spliced'],'machinelabels-iter0.h5'), self.markers)
-
-
 
     def updateConfig(self, event={}, videos=[],bodyparts=[],numframes2pick=None,corner2move2=None):
         # Updates config.yaml with arguments (if supplied).
@@ -285,11 +285,10 @@ class Project:
         combined_list = [y for x in extracted_frames for y in x]
         return combined_list
 
-    def getOutlierIndices(self, dir):
-    	extracted_files = self.scanDir(dir, extension='png')
-    	extracted_indices = [int(os.path.splitext(os.path.basename(png))[0][3:].lstrip('0').rstrip('labeled')) for png in extracted_files]
-    	new_indices = [index for index in extracted_indices if not index in self.env['extracted_indices']]
-    	unique_indices = list({index for index in new_indices})
+    def getOutlierIndices(self, outlier_list_of_lists):
+        combined_list = [y for x in outlier_list_of_lists for y in x]
+    	outlier_indices = [int(os.path.splitext(os.path.basename(png))[0][3:].lstrip('0').rstrip('labeled')) for path in combined_list]
+    	unique_indices = [index for index in outlier_indices]
     	result = sorted(unique_indices)
     	return result
 
