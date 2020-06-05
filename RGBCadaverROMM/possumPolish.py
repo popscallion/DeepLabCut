@@ -5,13 +5,14 @@ import datetime
 import warnings
 import importlib
 import cv2
+import zipfile
 import ruamel.yaml
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import deeplabcut as dlc
 
-#make sure split and splice functions are wrapped in file tracker if necessary, call cleanup as necesary.
+
 
 
 class Project:
@@ -58,7 +59,7 @@ class Project:
     def createExtractMatch(self):
         # Creates new DeepLabCut project, overwrites default config.yaml, and performs initial frame extraction.
         task = input("Name your project (no spaces, no periods)")
-        wd = input("Project path? This is where you want the folder containing your project to live.").strip('"')
+        wd = input("Enter directory where project should be created:").strip('"')
         vid_format = os.path.splitext(self.vids_separate[0])[1]
         self.yaml = dlc.create_new_project(task,self.experimenter,self.vids_separate, working_directory=wd, videotype=vid_format, copy_videos=True)
         self.getDirs()
@@ -85,7 +86,7 @@ class Project:
     def getDirs(self):
         # Stores paths to directories created by DeepLabCut.create_new_project. Makes new directory to store frames extracted for XMALab.
         self.wd = os.path.dirname(self.yaml)
-        self.dirs['model'] = os.path.join(self.wd,"dlc-models")
+        self.dirs['models'] = os.path.join(self.wd,"dlc-models")
         self.dirs['evaluation'] = os.path.join(self.wd,"evaluation-results")
         self.dirs['labeled'] = os.path.join(self.wd,"labeled-data")
         self.dirs['spliced'] = os.path.join(self.dirs['labeled'],os.path.splitext(os.path.basename(self.vids_merged[0]))[0])
@@ -132,7 +133,8 @@ class Project:
             else:
                 sys.exit("Profile does not exist in profiles.yaml")
 
-    def getOutliers(self, make_labels=False):
+    def getOutliers(self, num2extract, make_labels=False):
+        self.updateConfig(numframes2pick=num2extract)
         if make_labels:
             self.deleteLabeledFrames(self.dirs['labeled'])
         # Runs 2 passes of extract_outlier_frames, focusing on distal markers for cam1 and cam2 respectively.
@@ -160,12 +162,14 @@ class Project:
                                                                         self.markers[29],self.markers[31],self.markers[35]  ],
                                                 savelabeled=make_labels)
         outlier_indices = self.matchFrames([outliers_cam1,outliers_cam2])
-        matched_outlier_frames = self.updateWithFunc('match_outliers', self.extractMatchedFrames, outlier_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_matched', timestamp=True)
+        matched_outlier_frames = self.updateWithFunc('match_outliers', self.extractMatchedFrames, outlier_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_outlier', timestamp=True)
         self.splitDlc2Xma(os.path.join(self.dirs['spliced'],'machinelabels-iter0.h5'), self.markers)
 
-    def updateConfig(self, event={}, videos=[],bodyparts=[],numframes2pick=None,corner2move2=None):
+    def updateConfig(self, project_path=None, event={}, videos=[],bodyparts=[],numframes2pick=None,corner2move2=None):
         # Updates config.yaml with arguments (if supplied).
         self.config = ruamel.yaml.load(open(self.yaml))
+        if project_path:
+            self.config['project_path']=project_path
         if event:
             if 'history' not in self.config:
                 self.config['history'] = {}
@@ -187,7 +191,21 @@ class Project:
         with open(self.yaml, 'w') as file:
             ruamel.yaml.round_trip_dump(self.config, file)
 
+    def updatePoseCfg(self, posecfg_path, project_path=None, init_weights=None):
+        # Updates pose_cfg.yaml with arguments (if supplied).
+        pose_cfg = ruamel.yaml.load(open(posecfg_path))
+        if project_path:
+            pose_cfg['project_path'] = project_path
+            print("Updated project_path in "+str(posecfg_path))
+        if init_weights:
+            pose_cfg['init_weights'] = init_weights
+            print("Updated init_weights in "+str(posecfg_path))
+        with open(posecfg_path, 'w') as file:
+            ruamel.yaml.round_trip_dump(pose_cfg, file)
+
+
     def cleanup(self, event):
+        # Deletes all files created by an operation, along with their immediate parent directory
         self.config = ruamel.yaml.load(open(self.yaml))
         if event not in self.config['history']:
             print('Not found in log')
@@ -279,6 +297,53 @@ class Project:
         ts = datetime.datetime.now().strftime("%d%b%y_%Hh%Mm%Ss")
         return ts
 
+    def migrateProject(self, project_path=None, video_dir=None, init_weights=None, convert=False, win2unix = False):
+        self.updateConfig()
+        if not project_path:
+            project_path = input("Enter the destination project path. This is the folder where config.yaml will live").strip('"')
+        if not video_dir:
+            video_dir = input("Enter the path to the destination video folder.").strip('"')
+        if not init_weights:
+            init_weights = input("Enter the path to the default weights file you want to use, e.g. {somepath}resnet_v1_50.ckpt").strip('"')
+        video_sets = [os.path.join(video_dir, os.path.basename(video)) for video in self.config['video_sets']]
+        if convert:
+            h5_labeled_list = self.scanDir(self.dirs['labeled'], extension='h5', verbose=True)
+            h5_training_list = self.scanDir(self.dirs['training'], extension='h5', verbose=True)
+            h5_list = h5_labeled_list + h5_training_list
+            if win2unix:
+                for h5 in h5_list:
+                    df = pd.read_hdf(h5, "df_with_missing")
+                    df.index = df.index.str.replace("\\", "/")
+                    df.to_hdf(h5, "df_with_missing", format="table", mode="w")
+                print("Converted paths in "+str(len(h5_list))+"h5 annotation files from windows to unix format")
+                project_path = project_path.replace("\\", "/")
+                init_weights = init_weights.replace("\\", "/")
+                video_sets = [ video.replace("\\", "/") for video in video_sets]
+                print("Converted all yaml paths from windows to unix format")
+            else:
+                for h5 in h5_list:
+                    df = pd.read_hdf(h5, "df_with_missing")
+                    df.index = df.index.str.replace("/", "\\")
+                    df.to_hdf(h5, "df_with_missing", format="table", mode="w")
+                print("Converted paths in "+str(len(h5_list))+"h5 annotation files from unix to windows format")
+                project_path = project_path.replace("/", "\\")
+                init_weights = init_weights.replace("/", "\\")
+                video_sets = [ video.replace("/", "\\") for video in video_sets]
+                print("Converted all yaml paths from unix to windows format")
+        self.updateConfig(project_path=project_path, videos=video_sets)
+        pose_cfgs_list = self.scanDir(self.dirs['models'], extension="yaml", filters=["pose_cfg"], filter_out=False, verbose=True)
+        for pose_cfg_file in pose_cfgs_list:
+            self.updatePoseCfg(pose_cfg_file, project_path=project_path, init_weights=init_weights)
+        print("Successfully migrated project")
+        return
+
+    def convertXMAProject(self):
+        #xmapath = r"C:\Users\Phil\Downloads\11Apr18.LaiRegnault.SEP101.LS.biceps_teres_lat.precals.xma"
+        #zf = zipfile.ZipFile(xmapath, 'r')
+        #zf.namelist()
+        #find project.xml, overwrite 2 instances of <CalibrationSequence Filename>
+        return
+
     def filterByExtension(self, list, extension):
         filtered_list = [path for path in list if extension in os.path.splitext(path)[1]]
         return filtered_list
@@ -338,6 +403,7 @@ class Project:
         df_combined.to_hdf(
             os.path.join(self.dirs['spliced'],("CollectedData_"+self.experimenter+".h5")),
             key="df_with_missing",
+            format="table",
             mode="w"
         )
         df_combined.to_csv(

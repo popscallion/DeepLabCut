@@ -14,21 +14,26 @@ import possumPolish
 importlib.reload(possumPolish)
 
 
+
 model = possumPolish.Project() #0. define a new project
-model.load('dv101',r"C:\Users\Phil\Development\DeepLabCut\dev\DEF-Phil-2020-06-04\config.yaml")
+model.load('dv101',r"C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff_test\config.yaml")
+
+model.migrateProject(r"C:\stuff",r"C:\stuff\videos",r"C:\stuff\weights.ckpt",convert=True, win2unix=False)
+
+
+
 model.importXma(next(iter(model.config['history'].keys())), outlier_mode=True)
 model.getOutliers()
-next(iter(model.config['history'].keys()))
 
 model.load('dv101',r"C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff\config.yaml") # 1. create a new dlc project with raw videos, extract 20 frames with k-means from each video, grab 40 frames total from each of two vids, stores frame paths and indices in frame_log.yaml
 #2. now go away and digitize the 40 frames in xmalab
-model.importXma() #3. come back and substitute merged video for raw vids
+model.importXma(event) #3. come back and substitute merged video for raw vids
 # model.dlc.check_labels(model.yaml) ##4. optionally, check to see if labels are plotting correctly
 # model.dlc.create_training_dataset(model.yaml, augmenter_type="imgaug") ##5. make training set
 # model.dlc.train_network(model.yaml, displayiters=10,saveiters=10000, maxiters=200000) ##6. Train network
 model.getOutliers()
 # go away and dgitize some more again
-model.importXmaOutliers()
+model.importXma(event, outlier_mode=True)
 #OPTIONAL
 model.dlc.check_labels(model.yaml)
 
