@@ -109,3 +109,5 @@ ENV/
 *.avi
 *.mp4
 
+# win10
+desktop.ini
