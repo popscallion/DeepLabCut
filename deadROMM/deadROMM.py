@@ -17,7 +17,6 @@ importlib.reload(possumPolish)
 
 model = possumPolish.Project() #0. define a new project
 model.load('dv101',r"C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff_test\config.yaml")
-
 model.migrateProject(r"C:\stuff",r"C:\stuff\videos",r"C:\stuff\weights.ckpt",convert=True, win2unix=False)
 
 
