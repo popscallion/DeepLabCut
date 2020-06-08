@@ -17,7 +17,7 @@ import deeplabcut as dlc
 
 class Project:
     def __init__(self):
-        self.profile_path = r'.\profiles.yaml'
+        self.profile_path = None
         self.num_to_extract = 20
         self.corner2move2 = 512
         self.outlier_epsilon = 30
@@ -33,7 +33,7 @@ class Project:
         self.config = {}
         self.dlc = dlc
 
-    def load(self, profile=None, yaml=None):
+    def load(self, profile_path=r'.\profiles.yaml', profile=None, yaml=None):
         '''
         Interactively specifies existing project config path, or starts new project.
             Parameters:
@@ -42,7 +42,7 @@ class Project:
             Returns:
                 None
         '''
-
+        self.profile_path = profile_path
         if profile:
             id = profile
         else:
