@@ -108,6 +108,10 @@ ENV/
 # videos
 *.avi
 *.mp4
+videos/
 
 # win10
 desktop.ini
+
+# dlc projects
+dev/
