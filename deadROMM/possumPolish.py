@@ -15,6 +15,7 @@ import deeplabcut as dlc
 
 
 
+
 class Project:
     def __init__(self):
         self.profile_path = None
@@ -32,26 +33,23 @@ class Project:
         self.vids_merged = []
         self.config = {}
         self.dlc = dlc
+        self.in_colab = 'google.colab' in sys.modules
 
-    def load(self, profile_path=r'.\profiles.yaml', profile=None, yaml=None):
+    def load(self, profile_path, profile, yaml=None):
         '''
         Interactively specifies existing project config path, or starts new project.
             Parameters:
+                profile_path (str): Path to profiles.yaml
                 profile (str): Alphanumberic individual identifier used as key in profiles.yaml, e.g. 'dv101'
                 yaml (str): Path to config.yaml
             Returns:
                 None
         '''
         self.profile_path = profile_path
-        if profile:
-            id = profile
-        else:
-            id = input("Select an existing profile in profiles.yaml or type 'quit', add the profile, and come back")
-        self.getProfile(id)
+        self.getProfile(profile)
         if yaml:
             self.yaml = yaml
             self.getDirs()
-            self.updateConfig()
         else:
             status = input("Type 'new' to start a new project, or enter the full path to an existing config.yaml to continue with an existing project. Type 'quit' to quit.").strip('"')
             if status == "new":
@@ -61,7 +59,8 @@ class Project:
             else:
                 self.yaml = status
                 self.getDirs()
-                self.updateConfig()
+        self.updateConfig()
+        print("Successfully loaded profile "+str(profile))
 
 
     def createExtractMatch(self):
@@ -350,7 +349,11 @@ class Project:
                     png_name = out_name+str(frame_index).zfill(4)+'.png'
                     png_path = os.path.join(out_dir, png_name)
                     png_list.append(png_path)
-                    cv2.imshow('frame',frame)
+                    if self.in_colab:
+                        plt.imshow(frame)
+                        plt.show()
+                    else:
+                        cv2.imshow('frame',frame)
                     cv2.imwrite(png_path, frame)
                     frame_counter = 0
                     if cv2.waitKey(1) & 0xFF == ord('q'):
