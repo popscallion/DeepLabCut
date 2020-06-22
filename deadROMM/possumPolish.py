@@ -465,6 +465,8 @@ class Project:
             self.mergeOutliers()
             self.dlc.create_training_dataset(self.yaml)
             # maybe track and print? not sure yet
+        else:
+            self.dlc.create_training_dataset(self.yaml)
 
 
     def mergeOutliers(self):
