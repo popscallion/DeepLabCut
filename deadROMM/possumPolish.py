@@ -556,6 +556,16 @@ class Project:
         print("Successfully split DLC format to XMALab 2D points; saved "+str(tracked_csv))
         return extracted_frames
 
+    def getBodypartsFromXmaExport(self, csv_path):
+    	df = pd.read_csv(csv_path, sep=',',header=0, dtype='float',na_values='NaN')
+    	names = df.columns.values
+    	parts = [name.rsplit('_',2)[0] for name in names]
+    	parts_unique = []
+    	for part in parts:
+    		if not part in parts_unique:
+    			parts_unique.append(part)
+    	return parts_unique
+
     def plotLoss(self, learning_stats_path):
         df=pd.read_csv(learning_stats_path,sep=',',header=None,names=['iteration','loss','lr'],dtype='float',na_values='NaN')
         fig, ax1 = plt.subplots(1, 1, figsize=(8,4))
