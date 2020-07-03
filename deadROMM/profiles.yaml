@@ -213,28 +213,47 @@ sm126:
   vids_merged:
     - Z:\lab\NSF forelimb project\Phil_lab\C-arm\Ex\Lai_1Nov2018_TeguSEP126\1Nov_diff.mp4
   markers:
-    - Body_ds1_crn
-    - Body_ds2_int
-    - Body_ds3_cdl
+    - Body_ds_lat_crn
     - Body_vn1_crn
-    - Body_vn2_int
     - Body_vn3_cdl
-    - Scapula_acr
-    - Scapula_spi
-    - Scapula_vtb
-    - Humerus_dpc
-    - Humerus_ent
-    - Humerus_ect
-    - Ulna_olc
-    - Ulna_int
-    - Ulna_dst
-    - Radius_prx
-    - Radius_int
-    - Radius_dst
-    - Teres_maj_prx
-    - Teres_maj_dst
-    - Biceps_prx
-    - Biceps_dst
+    - Scapula_acrR
+    - Scapula_crnR
+    - Scapula_cdlR
+    - Humerus_dpcR
+    - Humerus_entR
+    - Humerus_ectR
+    - Ulna_olcR
+    - Ulna_intR
+    - Ulna_dstR
+    - Triceps_prxR
+    - Triceps_dstR
+    - Lat_dstR
+    - Body_ds_cdl
+    - Biceps_prxR
+    - Biceps_dstR
+    - Scapula_accR
+    - Scapula_crnL
+    - Scapula_cdlL
+    - Scapula_acrL
+    - Humerus_dpcL
+    - Humerus_entL
+    - Humerus_ectL
+    - Ulna_olcL
+    - Ulna_intL
+    - Ulna_dstL
+    - Triceps_prxL
+    - Triceps_dstL
+    - Biceps_prxL
+    - Biceps_dstL
+    - Lat_dstL
+    - Body_vn2_lat
+    - Radius_prxL
+    - Radius_intL
+    - Radius_dstL
+    - Radius_prxR
+    - Radius_intR
+    - Radius_dstR
+    - carpalL
 
 sm105:
   experiment: Lai_31July2018_TeguSEP105
@@ -272,25 +291,37 @@ sm108:
   vids_merged:
     - Z:\lab\NSF forelimb project\Phil_lab\C-arm\Ex\Lai_Aug15_TeguSEP108\15Aug_diff.mp4
   markers:
-    - Body_ds1_crn
-    - Body_ds2_int
-    - Body_ds3_cdl
+    - Body_ds_lat_crn
     - Body_vn1_crn
-    - Body_vn2_int
     - Body_vn3_cdl
-    - Scapula_acr
-    - Scapula_spi
-    - Scapula_vtb
-    - Humerus_dpc
-    - Humerus_ent
-    - Humerus_ect
-    - Ulna_olc
-    - Ulna_int
-    - Ulna_dst
-    - Radius_prx
-    - Radius_int
-    - Radius_dst
-    - Teres_maj_prx
-    - Teres_maj_dst
-    - Biceps_prx
-    - Biceps_dst
+    - Scapula_acrR
+    - Scapula_crnR
+    - Scapula_cdlR
+    - Humerus_dpcR
+    - Humerus_entR
+    - Humerus_ectR
+    - Ulna_olcR
+    - Ulna_intR
+    - Ulna_dstR
+    - Triceps_prxR
+    - Triceps_dstR
+    - Lat_dstR
+    - Body_ds_cdl
+    - Biceps_prxR
+    - Biceps_dstR
+    - Scapula_accL
+    - Scapula_crnL
+    - Scapula_cdlL
+    - Scapula_acrL
+    - Humerus_dpcL
+    - Humerus_entL
+    - Humerus_ectL
+    - Ulna_olcL
+    - Ulna_intL
+    - Ulna_dstL
+    - Triceps_prxL
+    - Triceps_dstL
+    - Biceps_prxL
+    - Biceps_dstL
+    - Lat_dstL
+    - Rogue

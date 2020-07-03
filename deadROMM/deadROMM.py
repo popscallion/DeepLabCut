@@ -17,12 +17,12 @@ importlib.reload(possumPolish)
 indices = [0, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750]
 model = possumPolish.Project() #0. define a new project
 model.vidToPngs(
-	'/Volumes/spierce_lab/lab/NSF forelimb project/Phil_lab/C-arm/Ex/16Apr18.LaiRegnault.SEP101.RSbiceps_triceps/Precals/Precube/Camera No.1.avi',
-	'/Volumes/GoogleDrive/My Drive/Development/DeepLabCut/dev/possum101right_biceps_triceps-Phil-2020-06-08/xma/c1',
+	'/Volumes/spierce_lab/lab/NSF forelimb project/Phil_lab/C-arm/Ex/14Feb18.LaiRegnault.SEP88.trilong_pec.test1/postcal/postcube_95-3.0_C001H001S0001.avi',
+	'/Volumes/GoogleDrive/My Drive/Development/DeepLabCut/dev/dv88_trilong_pec-Phil-2020-06-09/xma/cubes/postc1',
 	indices)
 model.vidToPngs(
-	'/Volumes/spierce_lab/lab/NSF forelimb project/Phil_lab/C-arm/Ex/16Apr18.LaiRegnault.SEP101.RSbiceps_triceps/Precals/Precube/Camera No.2.avi',
-	'/Volumes/GoogleDrive/My Drive/Development/DeepLabCut/dev/possum101right_biceps_triceps-Phil-2020-06-08/xma/c2',
+	'/Volumes/spierce_lab/lab/NSF forelimb project/Phil_lab/C-arm/Ex/14Feb18.LaiRegnault.SEP88.trilong_pec.test1/postcal/postcube_95-3.0_C002H001S0001.avi',
+	'/Volumes/GoogleDrive/My Drive/Development/DeepLabCut/dev/dv88_trilong_pec-Phil-2020-06-09/xma/cubes/postc2',
 	indices)
 
 model.load('dv101',r"C:\Users\Phil\Development\DeepLabCut\dev\possum101_11Apr-Phil-2020-04-13-diff_test\config.yaml")
