@@ -114,4 +114,10 @@ videos/
 desktop.ini
 
 # dlc projects
-dev/
+dev/*
+
+# xma stuff
+*.obj
+
+# mac icons
+Icon?

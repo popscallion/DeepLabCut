@@ -61,6 +61,7 @@ class Project:
                 self.getDirs()
         self.updateConfig()
         print("Successfully loaded profile "+str(profile))
+        return self.yaml
 
 
     def createExtractMatch(self):
@@ -425,7 +426,8 @@ class Project:
         # Recurses through a list of paths looking for unique frame numbers, returns a list of indices.
         frame_list = self.filterByExtension(list, extension = 'png')
         extracted_indices = [int(os.path.splitext(os.path.basename(png))[0][3:].lstrip('0')) for png in frame_list]
-        unique_indices = [index for index in extracted_indices]
+        unique_indices = {}
+        unique_indices = {index for index in extracted_indices if index not in unique_indices}
         result = sorted(unique_indices)
         print("Found "+str(len(result))+" unique frame indices")
         return result
@@ -506,7 +508,9 @@ class Project:
         for part in parts:
             if not part in parts_unique:
                 parts_unique.append(part)
-        df['frame_index']=[os.path.join(substitute_data_relpath,'img'+str(index).zfill(4)+'.png') for index in frame_indices]
+        unique_frames = {}
+        unique_frames = {index for index in frame_indices if index not in unique_frames}
+        df['frame_index']=[os.path.join(substitute_data_relpath,'img'+str(index).zfill(4)+'.png') for index in unique_frames]
         df['scorer']=self.experimenter
         df = df.melt(id_vars=['frame_index','scorer'])
         new = df['variable'].str.rsplit("_",n=1,expand=True)
