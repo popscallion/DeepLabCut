@@ -320,6 +320,18 @@ class Project:
                     file_list = [file for file in file_list if re.search(string, os.path.basename(file))]
         return(file_list)
 
+    def getLatestSnapshot(self, snapshot_dir):
+      snapshots = []
+      for root, dirs, files in os.walk(snapshot_dir):
+        for name in files:
+          if name.split('-')[0]=='snapshot':
+            snapshots.append(name.split('.')[0])
+      uniques = {}
+      uniques = {index for index in snapshots if index not in uniques}
+      sorted_uniques = sorted(uniques, key=lambda index: index.split('-')[1], reverse=True)
+      latest = os.path.join(snapshot_dir, sorted_uniques[0])
+      return latest
+
     def vidToPngs(self, video_path, output_dir=None, indices_to_match=[], name_from_folder=True):
         # Takes a list of frame numbers and exports matching frames from a video as pngs.
         frame_index = 0
