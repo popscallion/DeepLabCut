@@ -22,7 +22,8 @@ class Project:
         self.num_to_extract = 20
         self.corner2move2 = 512
         self.outlier_epsilon = 30
-        self.outlier_algo = 'fitting'
+        self.p_bound = 0.01
+        self.outlier_algo = 'uncertain'
         self.yaml = None
         self.wd = None
         self.experiment = None
@@ -75,7 +76,7 @@ class Project:
         task = input("Name your project (no spaces, no periods)")
         wd = input("Enter directory where project should be created:").strip('"')
         vid_format = os.path.splitext(self.vids_separate[0])[1]
-        self.yaml = dlc.create_new_project(task,self.experimenter,self.vids_separate, working_directory=wd, videotype=vid_format, copy_videos=True)
+        self.yaml = dlc.create_new_project(task,self.experimenter,self.vids_separate, working_directory=wd, videotype=vid_format, copy_videos=False)
         self.getDirs()
         self.updateConfig(bodyparts=self.markers, numframes2pick=self.num_to_extract, corner2move2=self.corner2move2)
         extracted_frames = self.updateWithFunc('extract', self.trackFiles, self.dirs['labeled'], dlc.extract_frames, self.yaml, userfeedback=False)
@@ -185,7 +186,7 @@ class Project:
             else:
                 sys.exit("Profile does not exist in profiles.yaml")
 
-    def getOutliers(self, num2extract, make_labels=False):
+    def getOutliers(self, num2extract, markers2watch={'c1':[],'c2':[]}, make_labels=False):
         '''
         Independently identifies outlier frames for two cameras, extracts the corresponding frames, and converts DeepLabCut predictions for those frames to XMALab format
             Parameters:
@@ -194,20 +195,37 @@ class Project:
             Returns:
                 None
         '''
-        self.updateConfig(numframes2pick=num2extract)
+        def specifyOutliers(markers2watch):
+          if not markers2watch['c1'] or markers2watch['c2']:
+            marker_dict = {i:j for i,j in enumerate(self.config['bodyparts'])}
+            print(marker_dict)
+            c1markers = input("Camera 1: enter markers of interest by their numeric indices, separated by a space (e.g. 3 11 18)").rstrip(' ')
+            c2markers = input("Camera 2: enter markers of interest by their numeric indices, separated by a space (e.g. 4 12 19)").rstrip(' ')
+            c1list = sorted([int(ele) for ele in c1markers.split(' ')])
+            c2list = sorted([int(ele) for ele in c2markers.split(' ')])
+            markers2watch['c1'] = [marker_dict[index] for index in c1list]
+            markers2watch['c2'] = [marker_dict[index] for index in c2list]
+            print(markers2watch['c1'])
+            print(markers2watch['c2'])
+            confirmed = input("Are these the markers you want to track? Hit enter to continue or type 'redo' to redo.")
+            if confirmed == 'redo':
+              markers2watch={'c1':[],'c2':[]}
+              specifyOutliers(markers2watch)
+            print('Markers selected.')
+            return markers2watch
+        markers2watch = specifyOutliers(markers2watch)
         if make_labels:
             self.deleteLabeledFrames(self.dirs['labeled'])
-        # Runs 2 passes of extract_outlier_frames, focusing on distal markers for cam1 and cam2 respectively.
         outliers_cam1 = self.updateWithFunc('outliers_cam1', self.trackFiles, self.dirs['spliced'],
                                                 dlc.extract_outlier_frames,
                                                 self.yaml,
                                                 self.vids_merged,
                                                 outlieralgorithm=self.outlier_algo,
                                                 extractionalgorithm='kmeans',
+                                                p_bound = self.p_bound,
                                                 automatic=True,
                                                 epsilon=self.outlier_epsilon,
-                                                comparisonbodyparts=[   self.markers[20], self.markers[22], self.markers[24],
-                                                                        self.markers[28],self.markers[30],self.markers[34]  ],
+                                                comparisonbodyparts = markers2watch['c1'],
                                                 savelabeled=make_labels)
 
         outliers_cam2 = self.updateWithFunc('outliers_cam2', self.trackFiles, self.dirs['spliced'],
@@ -216,12 +234,14 @@ class Project:
                                                 self.vids_merged,
                                                 outlieralgorithm=self.outlier_algo,
                                                 extractionalgorithm='kmeans',
+                                                p_bound = self.p_bound,
                                                 automatic=True,
                                                 epsilon=self.outlier_epsilon,
-                                                comparisonbodyparts=[   self.markers[21], self.markers[23], self.markers[25],
-                                                                        self.markers[29],self.markers[31],self.markers[35]  ],
+                                                comparisonbodyparts = markers2watch['c2'],
                                                 savelabeled=make_labels)
-        outlier_indices = self.matchFrames([outliers_cam1,outliers_cam2])
+        print("hello1")
+        print(outliers_cam1)
+        outlier_indices = self.matchFrames(outliers_cam1+outliers_cam2)
         matched_outlier_frames = self.updateWithFunc('match_outliers', self.extractMatchedFrames, outlier_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_outlier', timestamp=True)
         self.splitDlc2Xma(os.path.join(self.dirs['spliced'],'machinelabels-iter0.h5'), self.markers)
 
@@ -274,8 +294,8 @@ class Project:
         with open(posecfg_path, 'w') as file:
             ruamel.yaml.round_trip_dump(pose_cfg, file)
 
-    def cleanup(self, event):
-        # Deletes all files created by an operation, along with their immediate parent directory
+    def cleanup(self, event, deleteparent=False):
+        # Deletes all files created by an operation, along with their immediate parent directory (optional)
         self.config = ruamel.yaml.load(open(self.yaml))
         if event not in self.config['history']:
             print('Not found in log')
@@ -291,12 +311,20 @@ class Project:
                 os.remove(path)
             else:
                 print("File not found: "+path)
-        for dir in dirs:
-            os.rmdir(dir)
-        print("Deleted "+str(len(files_deleted))+" files and "+str(len(dirs))+" directories associated with operation "+str(self.config['history'][event]['operation'])+" at "+event)
+        print("Deleted "+str(len(files_deleted))+" files associated with operation "+str(self.config['history'][event]['operation'])+" at "+event)
+        if deleteparent:
+            for dir in dirs:
+                os.rmdir(dir)
+        print("Deleted "+str(len(dirs))+" directories associated with operation "+str(self.config['history'][event]['operation'])+" at "+event)
         self.config['history'].pop(event, None)
         with open(self.yaml, 'w') as file:
             ruamel.yaml.round_trip_dump(self.config, file)
+
+    def evaluateAndAnalyze(self, shuffle=1, trainingsetindex=0.95):
+        trainposeconfigfile, testposeconfigfile, snapshotfolder = self.dlc.return_train_network_path(self.yaml, shuffle, trainingsetindex)
+        self.plotLoss(os.path.join(snapshotfolder,'learning_stats.csv'))
+        self.dlc.evaluate_network(self.yaml)
+        self.dlc.analyze_videos(self.yaml, self.vids_merged, gputouse=0, save_as_csv=True)
 
     def scanDir(self, directory, extension, filters=[], filter_out=True, verbose=False):
         # Recurses through a directory looking for files with a certain extension, with optional filtering behavior. Returns list of paths.
