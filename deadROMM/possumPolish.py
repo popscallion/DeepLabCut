@@ -10,11 +10,8 @@ import ruamel.yaml
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from scipy import stats
 import deeplabcut as dlc
-
-
-
-
 
 class Project:
     def __init__(self):
@@ -23,7 +20,6 @@ class Project:
         self.corner2move2 = 512
         self.outlier_epsilon = 30
         self.p_bound = 0.01
-        self.outlier_algo = 'uncertain'
         self.yaml = None
         self.wd = None
         self.experiment = None
@@ -82,6 +78,7 @@ class Project:
         extracted_frames = self.updateWithFunc('extract', self.trackFiles, self.dirs['labeled'], dlc.extract_frames, self.yaml, userfeedback=False)
         extracted_indices = self.matchFrames(extracted_frames) #get indices of extracted frames
         matched_frames = self.updateWithFunc('match_extracted', self.extractMatchedFrames, extracted_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_matched', timestamp=True)
+        self.exciseRevise(self.findBlanks(extracted_frames+matched_frames,return_indices=True))
         print("Succesfully created a new DeepLabCut project and performed initial frame extraction. Frames for XMALab are in "+str(self.dirs['xma']))
 
     def updateWithFunc(self, type, func, *args, **kwargs):
@@ -186,7 +183,7 @@ class Project:
             else:
                 sys.exit("Profile does not exist in profiles.yaml")
 
-    def getOutliers(self, num2extract, markers2watch={'c1':[],'c2':[]}, make_labels=False):
+    def getOutliers(self, num2extract, markers2watch={'c1':[],'c2':[]}, outlier_algo='uncertain', make_labels=False):
         '''
         Independently identifies outlier frames for two cameras, extracts the corresponding frames, and converts DeepLabCut predictions for those frames to XMALab format
             Parameters:
@@ -213,6 +210,7 @@ class Project:
               specifyOutliers(markers2watch)
             print('Markers selected.')
             return markers2watch
+        self.updateConfig(numframes2pick=num2extract)
         markers2watch = specifyOutliers(markers2watch)
         if make_labels:
             self.deleteLabeledFrames(self.dirs['labeled'])
@@ -220,7 +218,7 @@ class Project:
                                                 dlc.extract_outlier_frames,
                                                 self.yaml,
                                                 self.vids_merged,
-                                                outlieralgorithm=self.outlier_algo,
+                                                outlieralgorithm=outlier_algo,
                                                 extractionalgorithm='kmeans',
                                                 p_bound = self.p_bound,
                                                 automatic=True,
@@ -232,17 +230,16 @@ class Project:
                                                 dlc.extract_outlier_frames,
                                                 self.yaml,
                                                 self.vids_merged,
-                                                outlieralgorithm=self.outlier_algo,
+                                                outlieralgorithm=outlier_algo,
                                                 extractionalgorithm='kmeans',
                                                 p_bound = self.p_bound,
                                                 automatic=True,
                                                 epsilon=self.outlier_epsilon,
                                                 comparisonbodyparts = markers2watch['c2'],
                                                 savelabeled=make_labels)
-        print("hello1")
-        print(outliers_cam1)
         outlier_indices = self.matchFrames(outliers_cam1+outliers_cam2)
         matched_outlier_frames = self.updateWithFunc('match_outliers', self.extractMatchedFrames, outlier_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_outlier', timestamp=True)
+        self.exciseRevise(self.findBlanks(outliers_cam1+outliers_cam2+matched_outlier_frames,return_indices=True))
         self.splitDlc2Xma(os.path.join(self.dirs['spliced'],'machinelabels-iter0.h5'), self.markers)
 
     def updateConfig(self, project_path=None, event={}, videos=[],bodyparts=[],numframes2pick=None,corner2move2=None):
@@ -294,8 +291,58 @@ class Project:
         with open(posecfg_path, 'w') as file:
             ruamel.yaml.round_trip_dump(pose_cfg, file)
 
-    def cleanup(self, event, deleteparent=False):
-        # Deletes all files created by an operation, along with their immediate parent directory (optional)
+    def findBlanks(self, files, return_indices=False):
+        pngs = [file for file in files if os.path.splitext(file)[1]=='.png']
+        filesizes = [os.stat(file).st_size for file in pngs]
+        z = stats.zscore(filesizes)
+        dictionary = {k:[v1,v2] for (k,v1,v2) in zip(pngs, filesizes, z)}
+        blanks = [key for key in dictionary.keys() if dictionary[key][1]<0]
+        if return_indices:
+            result = [os.path.splitext(os.path.basename(file))[0][3:].lstrip('0') for file in blanks]
+            return result
+        else:
+            return blanks
+
+    def exciseRevise(self, indices):
+        self.config = ruamel.yaml.load(open(self.yaml))
+        files_to_delete = []
+        all_deleted = []
+        not_deleted = []
+        for event in self.config['history']:
+            for file in self.config['history'][event]['files']:
+                if os.path.splitext(os.path.basename(file))[0][3:].lstrip('0') in indices:
+                    files_to_delete.append(file)
+        files_to_delete_dict = {k:v for k, v in enumerate(files_to_delete)}
+        print(files_to_delete_dict)
+        exclusions = input("Proceed with deleting these files and erasing them from history? Hit enter to continue, type 'quit' to exit, or specify files to exclude by their numeric indices, separated by a space (e.g. 0 2)").rstrip(' ')
+        if exclusions == 'quit':
+            sys.exit("Pipeline terminated.")
+        else:
+            final_list = [files_to_delete_dict[key] for key in files_to_delete_dict.keys() if str(key) not in exclusions]
+        for event in self.config['history']:
+            deleted = []
+            for file in self.config['history'][event]['files']:
+                if file in final_list:
+                    try:
+                        os.remove(file)
+                        print("deleted ", file, " and removed it from history")
+                        deleted.append(file)
+                    except:
+                        not_deleted.append(file)
+                        print("error while deleting",file)
+            all_deleted.extend(deleted)
+            new_files = [file for file in self.config['history'][event]['files'] if file not in deleted]
+            self.config['history'][event]['files'] = new_files
+        print("Redacted ",str(len(all_deleted))," files.")
+        print("Failed to redact ",str(len(not_deleted))," files. Check output for details.")
+        with open(self.yaml, 'w') as file:
+            ruamel.yaml.round_trip_dump(self.config, file)
+        return not_deleted
+
+
+
+    def cleanup(self, event):
+        # Deletes all files created by an operation, along with their immediate parent directory (if empty)
         self.config = ruamel.yaml.load(open(self.yaml))
         if event not in self.config['history']:
             print('Not found in log')
@@ -312,10 +359,14 @@ class Project:
             else:
                 print("File not found: "+path)
         print("Deleted "+str(len(files_deleted))+" files associated with operation "+str(self.config['history'][event]['operation'])+" at "+event)
-        if deleteparent:
-            for dir in dirs:
-                os.rmdir(dir)
-        print("Deleted "+str(len(dirs))+" directories associated with operation "+str(self.config['history'][event]['operation'])+" at "+event)
+        for dir in dirs:
+            if len(os.listdir(dir)) == 0:
+                try:
+                    os.rmdir(dir)
+                    print("Deleted directory ", dir)
+                except:
+                    print( "FAILED :", dir )
+                    pass
         self.config['history'].pop(event, None)
         with open(self.yaml, 'w') as file:
             ruamel.yaml.round_trip_dump(self.config, file)
