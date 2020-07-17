@@ -1,6 +1,0 @@
-model_checkpoint_path: "C:\\Users\\LabAdmin\\Documents\\Phil\\DeepLabCut\\dev\\possum101_11Apr-Phil-2020-04-13-diff\\dlc-models\\iteration-0\\possum101_11AprApr13-trainset95shuffle1\\train\\snapshot-200000"
-all_model_checkpoint_paths: "C:\\Users\\LabAdmin\\Documents\\Phil\\DeepLabCut\\dev\\possum101_11Apr-Phil-2020-04-13-diff\\dlc-models\\iteration-0\\possum101_11AprApr13-trainset95shuffle1\\train\\snapshot-180000"
-all_model_checkpoint_paths: "C:\\Users\\LabAdmin\\Documents\\Phil\\DeepLabCut\\dev\\possum101_11Apr-Phil-2020-04-13-diff\\dlc-models\\iteration-0\\possum101_11AprApr13-trainset95shuffle1\\train\\snapshot-185000"
-all_model_checkpoint_paths: "C:\\Users\\LabAdmin\\Documents\\Phil\\DeepLabCut\\dev\\possum101_11Apr-Phil-2020-04-13-diff\\dlc-models\\iteration-0\\possum101_11AprApr13-trainset95shuffle1\\train\\snapshot-190000"
-all_model_checkpoint_paths: "C:\\Users\\LabAdmin\\Documents\\Phil\\DeepLabCut\\dev\\possum101_11Apr-Phil-2020-04-13-diff\\dlc-models\\iteration-0\\possum101_11AprApr13-trainset95shuffle1\\train\\snapshot-195000"
-all_model_checkpoint_paths: "C:\\Users\\LabAdmin\\Documents\\Phil\\DeepLabCut\\dev\\possum101_11Apr-Phil-2020-04-13-diff\\dlc-models\\iteration-0\\possum101_11AprApr13-trainset95shuffle1\\train\\snapshot-200000"
