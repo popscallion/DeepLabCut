@@ -75,10 +75,10 @@ class Project:
         self.yaml = dlc.create_new_project(task,self.experimenter,self.vids_separate, working_directory=wd, videotype=vid_format, copy_videos=False)
         self.getDirs()
         self.updateConfig(bodyparts=self.markers, numframes2pick=self.num_to_extract, corner2move2=self.corner2move2)
-        extracted_frames = self.updateWithFunc('extract', self.trackFiles, self.dirs['labeled'], dlc.extract_frames, self.yaml, userfeedback=False)
-        extracted_indices = self.matchFrames(extracted_frames) #get indices of extracted frames
-        matched_frames = self.updateWithFunc('match_extracted', self.extractMatchedFrames, extracted_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_matched', timestamp=True)
-        self.exciseRevise(self.findBlanks(extracted_frames+matched_frames,return_indices=True))
+        extraction_event, extracted_frames = self.updateWithFunc('extract', self.trackFiles, self.dirs['labeled'], dlc.extract_frames, self.yaml, userfeedback=False)
+        extracted_frames_final = self.exciseRevise(extraction_event, self.findBlanks(extracted_frames,return_indices=True))[0]
+        extracted_indices = self.matchFrames(extracted_frames_final) #get indices of extracted frames
+        matched_frames = self.updateWithFunc('match_extracted', self.extractMatchedFrames, extracted_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_matched', timestamp=True)[1]
         print("Succesfully created a new DeepLabCut project and performed initial frame extraction. Frames for XMALab are in "+str(self.dirs['xma']))
 
     def updateWithFunc(self, type, func, *args, **kwargs):
@@ -96,7 +96,7 @@ class Project:
         update = {ts:{'operation':type,'files':list_of_files}}
         self.updateConfig(event=update)
         print("Updated config.yaml with event "+type+" at "+ts)
-        return list_of_files
+        return [ts, list_of_files]
 
     def updateWithFiles(self, type, list_of_paths):
         '''
@@ -214,7 +214,7 @@ class Project:
         markers2watch = specifyOutliers(markers2watch)
         if make_labels:
             self.deleteLabeledFrames(self.dirs['labeled'])
-        outliers_cam1 = self.updateWithFunc('outliers_cam1', self.trackFiles, self.dirs['spliced'],
+        extraction_event_cam1, outliers_cam1 = self.updateWithFunc('outliers_cam1', self.trackFiles, self.dirs['spliced'],
                                                 dlc.extract_outlier_frames,
                                                 self.yaml,
                                                 self.vids_merged,
@@ -226,7 +226,7 @@ class Project:
                                                 comparisonbodyparts = markers2watch['c1'],
                                                 savelabeled=make_labels)
 
-        outliers_cam2 = self.updateWithFunc('outliers_cam2', self.trackFiles, self.dirs['spliced'],
+        extraction_event_cam2, outliers_cam2 = self.updateWithFunc('outliers_cam2', self.trackFiles, self.dirs['spliced'],
                                                 dlc.extract_outlier_frames,
                                                 self.yaml,
                                                 self.vids_merged,
@@ -237,10 +237,13 @@ class Project:
                                                 epsilon=self.outlier_epsilon,
                                                 comparisonbodyparts = markers2watch['c2'],
                                                 savelabeled=make_labels)
-        outlier_indices = self.matchFrames(outliers_cam1+outliers_cam2)
-        matched_outlier_frames = self.updateWithFunc('match_outliers', self.extractMatchedFrames, outlier_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_outlier', timestamp=True)
-        self.exciseRevise(self.findBlanks(outliers_cam1+outliers_cam2+matched_outlier_frames,return_indices=True))
-        self.splitDlc2Xma(os.path.join(self.dirs['spliced'],'machinelabels-iter0.h5'), self.markers)
+        self.exciseRevise(extraction_event_cam1, self.findBlanks(outliers_cam1,return_indices=True))
+        self.exciseRevise(extraction_event_cam2, self.findBlanks(outliers_cam2,return_indices=True))
+        outlier_indices = self.matchFrames(self.config['history'][extraction_event_cam1]['files']+self.config['history'][extraction_event_cam2]['files'])
+        matched_outlier_frames = self.updateWithFunc('match_outliers', self.extractMatchedFrames, outlier_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_outlier', timestamp=True)[1]
+        newfiles = outliers_cam1+outliers_cam2
+        h5s = [path for path in newfiles if 'h5' in path]
+        self.splitDlc2Xma(h5s[0], self.markers, matched_outlier_frames)
 
     def updateConfig(self, project_path=None, event={}, videos=[],bodyparts=[],numframes2pick=None,corner2move2=None):
         '''
@@ -292,26 +295,27 @@ class Project:
             ruamel.yaml.round_trip_dump(pose_cfg, file)
 
     def findBlanks(self, files, return_indices=False):
+        print("Finding mismatched frames...")
         pngs = [file for file in files if os.path.splitext(file)[1]=='.png']
         filesizes = [os.stat(file).st_size for file in pngs]
         z = stats.zscore(filesizes)
         dictionary = {k:[v1,v2] for (k,v1,v2) in zip(pngs, filesizes, z)}
         blanks = [key for key in dictionary.keys() if dictionary[key][1]<0]
+        print("Found ",str(len(blanks))," mismatched frames.")
         if return_indices:
             result = [os.path.splitext(os.path.basename(file))[0][3:].lstrip('0') for file in blanks]
             return result
         else:
             return blanks
 
-    def exciseRevise(self, indices):
+    def exciseRevise(self, event, indices):
         self.config = ruamel.yaml.load(open(self.yaml))
         files_to_delete = []
         all_deleted = []
         not_deleted = []
-        for event in self.config['history']:
-            for file in self.config['history'][event]['files']:
-                if os.path.splitext(os.path.basename(file))[0][3:].lstrip('0') in indices:
-                    files_to_delete.append(file)
+        for file in self.config['history'][event]['files']:
+            if os.path.splitext(os.path.basename(file))[0][3:].lstrip('0') in indices:
+                files_to_delete.append(file)
         files_to_delete_dict = {k:v for k, v in enumerate(files_to_delete)}
         print(files_to_delete_dict)
         exclusions = input("Proceed with deleting these files and erasing them from history? Hit enter to continue, type 'quit' to exit, or specify files to exclude by their numeric indices, separated by a space (e.g. 0 2)").rstrip(' ')
@@ -337,45 +341,62 @@ class Project:
         print("Failed to redact ",str(len(not_deleted))," files. Check output for details.")
         with open(self.yaml, 'w') as file:
             ruamel.yaml.round_trip_dump(self.config, file)
-        return not_deleted
+        return [new_files, not_deleted]
 
 
 
-    def cleanup(self, event):
+    def cleanup(self, events):
         # Deletes all files created by an operation, along with their immediate parent directory (if empty)
         self.config = ruamel.yaml.load(open(self.yaml))
-        if event not in self.config['history']:
-            print('Not found in log')
-            return
-        dirs = []
-        files_deleted = []
-        for path in self.config['history'][event]['files']:
-            dir = os.path.dirname(path)
-            if dir not in dirs:
-                dirs.append(dir)
-            if os.path.exists(path):
-                files_deleted.append(path)
-                os.remove(path)
-            else:
-                print("File not found: "+path)
-        print("Deleted "+str(len(files_deleted))+" files associated with operation "+str(self.config['history'][event]['operation'])+" at "+event)
-        for dir in dirs:
-            if len(os.listdir(dir)) == 0:
-                try:
-                    os.rmdir(dir)
-                    print("Deleted directory ", dir)
-                except:
-                    print( "FAILED :", dir )
-                    pass
-        self.config['history'].pop(event, None)
+        for event in events:
+            if event not in self.config['history']:
+                print('Not found in log')
+                pass
+            dirs = []
+            files_deleted = []
+            for path in self.config['history'][event]['files']:
+                dir = os.path.dirname(path)
+                if dir not in dirs:
+                    dirs.append(dir)
+                if os.path.exists(path):
+                    files_deleted.append(path)
+                    os.remove(path)
+                else:
+                    print("File not found: "+path)
+            print("Deleted "+str(len(files_deleted))+" files associated with operation "+str(self.config['history'][event]['operation'])+" at "+event)
+            for dir in dirs:
+                if len(os.listdir(dir)) == 0:
+                    try:
+                        os.rmdir(dir)
+                        print("Deleted directory ", dir)
+                    except:
+                        print( "FAILED :", dir )
+                        pass
+            self.config['history'].pop(event, None)
         with open(self.yaml, 'w') as file:
             ruamel.yaml.round_trip_dump(self.config, file)
 
-    def evaluateAndAnalyze(self, shuffle=1, trainingsetindex=0.95):
-        trainposeconfigfile, testposeconfigfile, snapshotfolder = self.dlc.return_train_network_path(self.yaml, shuffle, trainingsetindex)
+    def evaluateAndAnalyze(self, shuffle=1, trainingsetindex=0):
+        trainposeconfigfile, testposeconfigfile, snapshotfolder = self.dlc.return_train_network_path(self.yaml, shuffle, self.config['TrainingFraction'][trainingsetindex])
         self.plotLoss(os.path.join(snapshotfolder,'learning_stats.csv'))
-        self.dlc.evaluate_network(self.yaml)
-        self.dlc.analyze_videos(self.yaml, self.vids_merged, gputouse=0, save_as_csv=True)
+        evaluation_return = self.updateWithFunc('evaluation', self.trackFiles, self.dirs['evaluation'],
+                                                self.dlc.evaluate_network,
+                                                config=self.yaml,
+                                                Shuffles=[shuffle],
+                                                trainingsetindex=trainingsetindex,
+                                                plotting=True,
+                                                gputouse=0
+                                                )
+        analysis_return = self.updateWithFunc('analysis', self.trackFiles,
+                                                os.path.dirname(self.vids_merged[0]),
+                                                self.dlc.analyze_videos,
+                                                config=self.yaml,
+                                                videos=self.vids_merged,
+                                                shuffle=shuffle,
+                                                trainingsetindex=trainingsetindex,
+                                                gputouse=0,
+                                                save_as_csv=True
+                                                )
 
     def scanDir(self, directory, extension, filters=[], filter_out=True, verbose=False):
         # Recurses through a directory looking for files with a certain extension, with optional filtering behavior. Returns list of paths.
@@ -599,8 +620,13 @@ class Project:
         for part in parts:
             if not part in parts_unique:
                 parts_unique.append(part)
-        unique_frames = {}
-        unique_frames = {index for index in frame_indices if index not in unique_frames}
+        print("Importing markers: ")
+        print(parts_unique)
+        unique_frames_set = {}
+        unique_frames_set = {index for index in frame_indices if index not in unique_frames_set}
+        unique_frames = sorted(unique_frames_set)
+        print("Importing frames: ")
+        print(unique_frames)
         df['frame_index']=[os.path.join(substitute_data_relpath,'img'+str(index).zfill(4)+'.png') for index in unique_frames]
         df['scorer']=self.experimenter
         df = df.melt(id_vars=['frame_index','scorer'])
@@ -630,14 +656,24 @@ class Project:
         print("Successfully spliced XMALab 2D points to DLC format; saved "+str(data_name)+", "+str(tracked_hdf)+", and "+str(tracked_csv))
         return parts_unique
 
-    def splitDlc2Xma(self, hdf_path, bodyparts):
+
+
+    def splitDlc2Xma(self, hdf_path, bodyparts, frame_paths=[]):
         bodyparts_XY = []
         ts = self.getTimeStamp()
         for part in bodyparts:
             bodyparts_XY.append(part+'_X')
             bodyparts_XY.append(part+'_Y')
         df=pd.read_hdf(hdf_path)
-        # extracted_frames= [index for index in df.index]
+        if frame_paths:
+            frame_names = [os.path.basename(path) for path in frame_paths]
+            unique_names = {}
+            unique_names = {name for name in frame_names if name not in unique_names}
+            name_indices = sorted(unique_names)
+            label_prefix = os.path.join(os.path.basename(os.path.dirname(os.path.dirname(df.index[0]))),os.path.basename(os.path.dirname(df.index[0])))
+            unified_names = [os.path.join(label_prefix, name_index) for name_index in name_indices]
+            print(unified_names)
+            df=df.loc[df.index.intersection(unified_names)]
         df = df.reset_index().melt(id_vars=['index'])
         df = df[df['coords'] != 'likelihood']
         df['id'] = df['bodyparts']+'_'+df['coords'].str.upper()

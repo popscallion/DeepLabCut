@@ -2,10 +2,10 @@ dv85left:
   experiment: 23Apr18.LaiRegnault.SEP85.LS.biceps_teres_lat
   experimenter: Phil
   vids_separate:
-    - videos/c1_23Apr.mp4
-    - videos/c2_23Apr.mp4
+    - ./videos/c1_23Apr.mp4
+    - ./videos/c2_23Apr.mp4
   vids_merged:
-    - videos/23Apr_diff.mp4
+    - ./videos/23Apr_diff.mp4
   markers:
     - Body_ds1_crn
     - Body_ds2_int
@@ -34,10 +34,10 @@ dv85right:
   experiment: 25Apr18.LaiRegnault.SEP85.RS.triceps_lat
   experimenter: Phil
   vids_separate:
-    - videos/c1_25Apr.mp4
-    - videos/c2_25Apr.mp4
+    - ./videos/c1_25Apr.mp4
+    - ./videos/c2_25Apr.mp4
   vids_merged:
-    - videos/25Apr_diff.mp4
+    - ./videos/25Apr_diff.mp4
   markers:
     - Body_ds1_crn
     - Body_ds2_int
@@ -65,10 +65,10 @@ dv88left:
   experiment: 21Feb18.LaiRegnault.SEP88.LS.teresmaj_pec.test2
   experimenter: Phil
   vids_separate:
-    - videos/c1_21Feb.mp4
-    - videos/c2_21Feb.mp4
+    - ./videos/c1_21Feb.mp4
+    - ./videos/c2_21Feb.mp4
   vids_merged:
-    - videos/21Feb_diff.mp4
+    - ./videos/21Feb_diff.mp4
   markers:
     - Body_ds1_crn
     - Body_ds3_cdl
@@ -89,10 +89,10 @@ dv88right:
   experiment: 14Feb18.LaiRegnault.SEP88.trilong_pec.test1
   experimenter: Phil
   vids_separate:
-    - videos/c1_14Feb.mp4
-    - videos/c2_14Feb.mp4
+    - ./videos/c1_14Feb.mp4
+    - ./videos/c2_14Feb.mp4
   vids_merged:
-    - videos/14Feb_diff.mp4
+    - ./videos/14Feb_diff.mp4
   markers:
     - Body_ds1_crn
     - Body_ds3_cdl
@@ -113,10 +113,10 @@ dv92:
   experiment: 5Apr18.LaiRegnault.SEP92.RS.biceps_3pec_delt
   experimenter: Phil
   vids_separate:
-    - videos/c1_5Apr.mp4
-    - videos/c2_5Apr.mp4
+    - ./videos/c1_5Apr.mp4
+    - ./videos/c2_5Apr.mp4
   vids_merged:
-    - videos/5Apr_diff.mp4
+    - ./videos/5Apr_diff.mp4
   markers:
     - Body_ds1_crn
     - Body_ds3_cdl
@@ -144,10 +144,10 @@ dv101left:
   experiment: 11Apr18.LaiRegnault.SEP101.LS.biceps_teres_lat
   experimenter: Phil
   vids_separate:
-    - videos/c1_11Apr.mp4
-    - videos/c2_11Apr.mp4
+    - ./videos/c1_11Apr.mp4
+    - ./videos/c2_11Apr.mp4
   vids_merged:
-    - videos/11Apr_diff.mp4
+    - ./videos/11Apr_diff.mp4
   markers:
     - Body_ds1_crn
     - Body_ds2_int
@@ -176,10 +176,10 @@ dv101right:
   experiment: 16Apr18.LaiRegnault.SEP101.RSbiceps_triceps
   experimenter: Phil
   vids_separate:
-    - videos/c1_16Apr.mp4
-    - videos/c2_16Apr.mp4
+    - ./videos/c1_16Apr.mp4
+    - ./videos/c2_16Apr.mp4
   vids_merged:
-    - videos/16Apr_diff.mp4
+    - ./videos/16Apr_diff.mp4
   markers:
     - Body_ds1_crn
     - Body_ds2_int
@@ -208,10 +208,10 @@ sm126:
   experiment: Lai_1Nov2018_TeguSEP126
   experimenter: Phil
   vids_separate:
-    - videos/c1_1Nov.mp4
-    - videos/c2_1Nov.mp4
+    - ./videos/c1_1Nov.mp4
+    - ./videos/c2_1Nov.mp4
   vids_merged:
-    - videos/1Nov_diff.mp4
+    - ./videos/1Nov_diff.mp4
   markers:
     - Body_ds_lat_crn
     - Body_vn1_crn
@@ -259,10 +259,10 @@ sm105:
   experiment: Lai_31July2018_TeguSEP105
   experimenter: Phil
   vids_separate:
-    - videos/c1_31Jul.mp4
-    - videos/c2_31Jul.mp4
+    - ./videos/c1_31Jul.mp4
+    - ./videos/c2_31Jul.mp4
   vids_merged:
-    - videos/31Jul_diff.mp4
+    - ./videos/31Jul_diff.mp4
   markers:
     - Body_ds_lat_crn
     - Body_vn1_crn
@@ -286,10 +286,10 @@ sm108:
   experiment: Lai_Aug15_TeguSEP108
   experimenter: Phil
   vids_separate:
-    - videos/c1_15Aug.mp4
-    - videos/c2_15Aug.mp4
+    - ./videos/c1_15Aug.mp4
+    - ./videos/c2_15Aug.mp4
   vids_merged:
-    - videos/15Aug_diff.mp4
+    - ./videos/15Aug_diff.mp4
   markers:
     - Body_ds_lat_crn
     - Body_vn1_crn
