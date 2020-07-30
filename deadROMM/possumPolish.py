@@ -239,11 +239,11 @@ class Project:
                                                 savelabeled=make_labels)
         self.exciseRevise(extraction_event_cam1, self.findBlanks(outliers_cam1,return_indices=True))
         self.exciseRevise(extraction_event_cam2, self.findBlanks(outliers_cam2,return_indices=True))
-        outlier_indices = self.matchFrames(self.config['history'][extraction_event_cam1]['files']+self.config['history'][extraction_event_cam2]['files'])
+        newfiles = self.config['history'][extraction_event_cam1]['files']+self.config['history'][extraction_event_cam2]['files']
+        outlier_indices = self.matchFrames(newfiles)
         matched_outlier_frames = self.updateWithFunc('match_outliers', self.extractMatchedFrames, outlier_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_outlier', timestamp=True)[1]
-        newfiles = outliers_cam1+outliers_cam2
         h5s = [path for path in newfiles if 'h5' in path]
-        self.splitDlc2Xma(h5s[0], self.markers, matched_outlier_frames)
+        self.splitDlc2Xma(h5s[0], self.markers, newfiles)
 
     def updateConfig(self, project_path=None, event={}, videos=[],bodyparts=[],numframes2pick=None,corner2move2=None):
         '''
@@ -666,14 +666,17 @@ class Project:
             bodyparts_XY.append(part+'_Y')
         df=pd.read_hdf(hdf_path)
         if frame_paths:
-            frame_names = [os.path.basename(path) for path in frame_paths]
-            unique_names = {}
-            unique_names = {name for name in frame_names if name not in unique_names}
-            name_indices = sorted(unique_names)
-            label_prefix = os.path.join(os.path.basename(os.path.dirname(os.path.dirname(df.index[0]))),os.path.basename(os.path.dirname(df.index[0])))
-            unified_names = [os.path.join(label_prefix, name_index) for name_index in name_indices]
-            print(unified_names)
-            df=df.loc[df.index.intersection(unified_names)]
+            def get_index(path):
+                [png_parent, png] = os.path.split(path)
+                [run_parent, run] = os.path.split(png_parent)
+                [base_parent, base] = os.path.split(run_parent)
+                result = os.path.join(base, run, png)
+                return result
+            pngs = [get_index(path) for path in frame_paths if os.path.splitext(path)[1]=='.png']
+            unique_pngs = {}
+            unique_pngs = {png for png in pngs if png not in unique_pngs}
+            sorted_pngs = sorted(unique_pngs)
+            df=df.loc[df.index.intersection(sorted_pngs)]
         df = df.reset_index().melt(id_vars=['index'])
         df = df[df['coords'] != 'likelihood']
         df['id'] = df['bodyparts']+'_'+df['coords'].str.upper()
