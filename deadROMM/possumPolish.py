@@ -563,13 +563,15 @@ class Project:
         print("Extracted "+str(len(indices))+" matching frames from each of "+str(len(src_vids))+" source videos")
         return combined_list
 
-    def importXma(self, event, csv_path=None, outlier_mode=False):
+    def importXma(self, event, csv_path=None, outlier_mode=False, indices_to_drop=[]):
         # Interactively imports labels from XMALab by substituting frames from merged video for original raw frames. Updates config.yaml to point to substituted video.
         if not csv_path:
             csv_path = input("Enter the full path to XMALab 2D XY coordinates csv, or type 'quit' to abort.").strip('"')
         if csv_path == "quit":
             sys.exit("Pipeline terminated.")
         indices_to_import = self.matchFrames(self.config['history'][event]['files'])
+        if indices_to_drop:
+            indices_to_import = list(sorted(set(indices_to_import).difference(set(indices_to_drop))))
         spliced_markers = self.spliceXma2Dlc(self.vids_merged[0], csv_path, indices_to_import, outlier_mode)
         self.extractMatchedFrames(indices_to_import, output_dir=self.dirs['labeled'], src_vids=self.vids_merged)
         self.updateConfig(videos=self.vids_merged, bodyparts=spliced_markers)
