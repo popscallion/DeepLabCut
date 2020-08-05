@@ -20,6 +20,7 @@ class Project:
         self.corner2move2 = 512
         self.outlier_epsilon = 30
         self.p_bound = 0.01
+        self.pcutoff = 0.5
         self.yaml = None
         self.wd = None
         self.experiment = None
@@ -74,7 +75,7 @@ class Project:
         vid_format = os.path.splitext(self.vids_separate[0])[1]
         self.yaml = dlc.create_new_project(task,self.experimenter,self.vids_separate, working_directory=wd, videotype=vid_format, copy_videos=False)
         self.getDirs()
-        self.updateConfig(bodyparts=self.markers, numframes2pick=self.num_to_extract, corner2move2=self.corner2move2)
+        self.updateConfig(bodyparts=self.markers, numframes2pick=self.num_to_extract, corner2move2=self.corner2move2, pcutoff=self.pcutoff)
         extraction_event, extracted_frames = self.updateWithFunc('extract', self.trackFiles, self.dirs['labeled'], dlc.extract_frames, self.yaml, userfeedback=False)
         extracted_frames_final = self.exciseRevise(extraction_event, self.findBlanks(extracted_frames,return_indices=True))[0]
         extracted_indices = self.matchFrames(extracted_frames_final) #get indices of extracted frames
@@ -183,6 +184,26 @@ class Project:
             else:
                 sys.exit("Profile does not exist in profiles.yaml")
 
+    def filterPredictions(self, analysis_h5, frame_paths, condition_name):
+      # frame_paths should come from match_outliers
+      filenames = [os.path.basename(path) for path in frame_paths if os.path.splitext(path)[1]=='.png']
+      unique_names = {}
+      unique_names = {name for name in filenames if name not in unique_names }
+      names_to_use = sorted(unique_names)
+      paths_to_use = [os.path.join(os.path.relpath(self.dirs['spliced'],self.wd),name) for name in names_to_use]
+      indices_to_use = [int(index[3:-4]) for index in names_to_use]
+      df = pd.read_hdf(analysis_h5, "df_with_missing")
+      filtered_df = df.iloc[indices_to_use]
+      df_with_names = filtered_df.set_index(pd.Series(paths_to_use))
+      ts = self.getTimeStamp()
+      data_name = os.path.join(self.dirs['spliced'],"FilteredMachineLabels_"+ts)
+      tracked_hdf = data_name + ".h5"
+      df_with_names.to_hdf(tracked_hdf, 'df_with_missing', format='table', mode='w')
+      tracked_files = [tracked_hdf]
+      self.updateWithFiles('filterPredictions_'+condition_name, tracked_files)
+      print("Successfully filtered model predictions; saved "+str(tracked_hdf))
+      self.splitDlc2Xma(tracked_hdf, self.markers)
+
     def getOutliers(self, num2extract, markers2watch={'c1':[],'c2':[]}, outlier_algo='uncertain', make_labels=False):
         '''
         Independently identifies outlier frames for two cameras, extracts the corresponding frames, and converts DeepLabCut predictions for those frames to XMALab format
@@ -245,7 +266,7 @@ class Project:
         h5s = [path for path in newfiles if 'h5' in path]
         self.splitDlc2Xma(h5s[0], self.markers, newfiles)
 
-    def updateConfig(self, project_path=None, event={}, videos=[],bodyparts=[],numframes2pick=None,corner2move2=None):
+    def updateConfig(self, project_path=None, event={}, videos=[],bodyparts=[],numframes2pick=None,corner2move2=None, pcutoff=None, increment_iteration=False):
         '''
         Writes supplied arguments to config.yaml. If called without arguments, updates config instance variable from config.yaml file without modifying the latter.
             Parameters:
@@ -278,6 +299,12 @@ class Project:
         if corner2move2:
             self.config['corner2move2']=[corner2move2,corner2move2]
             print("Updated corner2move2 in config.yaml")
+        if pcutoff:
+            self.config['pcutoff']=pcutoff
+            print("Updated pcutoff in config.yaml")
+        if increment_iteration:
+            self.config['iteration'] += 1
+            print("Incremented iteration in config.yaml")
         # ruamel.yaml.round_trip_dump(self.config, sys.stdout)
         with open(self.yaml, 'w') as file:
             ruamel.yaml.round_trip_dump(self.config, file)
@@ -572,6 +599,10 @@ class Project:
         indices_to_import = self.matchFrames(self.config['history'][event]['files'])
         if indices_to_drop:
             indices_to_import = list(sorted(set(indices_to_import).difference(set(indices_to_drop))))
+            df=pd.read_csv(csv_path,sep=',',header=0,dtype='float')
+            df1=df.iloc[indices_to_import]
+            new_path = os.path.join(os.path.dirname(csv_path),os.path.splitext(os.path.basename(csv_path))[0]+'_clean.csv')
+            df1.to_csv(new_path,index=False)
         spliced_markers = self.spliceXma2Dlc(self.vids_merged[0], csv_path, indices_to_import, outlier_mode)
         self.extractMatchedFrames(indices_to_import, output_dir=self.dirs['labeled'], src_vids=self.vids_merged)
         self.updateConfig(videos=self.vids_merged, bodyparts=spliced_markers)
