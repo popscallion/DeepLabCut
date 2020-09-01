@@ -590,7 +590,7 @@ class Project:
         print("Extracted "+str(len(indices))+" matching frames from each of "+str(len(src_vids))+" source videos")
         return combined_list
 
-    def importXma(self, event, csv_path=None, outlier_mode=False, indices_to_drop=[]):
+    def importXma(self, event, csv_path=None, outlier_mode=False, indices_to_drop=[], swap=False, cross=False):
         # Interactively imports labels from XMALab by substituting frames from merged video for original raw frames. Updates config.yaml to point to substituted video.
         if not csv_path:
             csv_path = input("Enter the full path to XMALab 2D XY coordinates csv, or type 'quit' to abort.").strip('"')
@@ -603,7 +603,7 @@ class Project:
             df1=df.iloc[indices_to_import]
             new_path = os.path.join(os.path.dirname(csv_path),os.path.splitext(os.path.basename(csv_path))[0]+'_clean.csv')
             df1.to_csv(new_path,index=False)
-        spliced_markers = self.spliceXma2Dlc(self.vids_merged[0], csv_path, indices_to_import, outlier_mode)
+        spliced_markers = self.spliceXma2Dlc(self.vids_merged[0], csv_path, indices_to_import, outlier_mode, swap, cross)
         self.extractMatchedFrames(indices_to_import, output_dir=self.dirs['labeled'], src_vids=self.vids_merged)
         self.updateConfig(videos=self.vids_merged, bodyparts=spliced_markers)
         if outlier_mode:
@@ -641,20 +641,62 @@ class Project:
             os.remove(frame)
         print("Deleted "+str(len(frame_list))+" DLC preview frames")
 
-    def spliceXma2Dlc(self, substitute_video, csv_path, frame_indices, outlier_mode=False):
+    def spliceXma2Dlc(self, substitute_video, csv_path, frame_indices, outlier_mode=False, swap=False, cross=False):
         # Takes csv of XMALab 2D XY coordinates from 2 cameras, outputs spliced hdf+csv data for DeepLabCut
         substitute_name = os.path.splitext(os.path.basename(substitute_video))[0]
         substitute_data_relpath = os.path.join("labeled-data",substitute_name)
         substitute_data_abspath = os.path.join(self.wd,substitute_data_relpath)
         df=pd.read_csv(csv_path,sep=',',header=0,dtype='float',na_values='NaN')
-        names = df.columns.values
-        parts = [name.rsplit('_',1)[0] for name in names]
-        parts_unique = []
-        for part in parts:
-            if not part in parts_unique:
-                parts_unique.append(part)
+        names_initial = df.columns.values
+        parts_initial = [name.rsplit('_',2)[0] for name in names_initial]
+        parts_unique_initial = []
+        for part in parts_initial:
+            if not part in parts_unique_initial:
+                parts_unique_initial.append(part)
+        if swap:
+            print("Creating cam1Y-cam2Y-swapped synthetic markers")
+            swaps = []
+            df_sw = pd.DataFrame()
+            for part in parts_unique_initial:
+                name_x1 = part+'_cam1_X'
+                name_x2 = part+'_cam2_X'
+                name_y1 = part+'_cam1_Y'
+                name_y2 = part+'_cam2_Y'
+                swap_name_x1 = 'sw_'+name_x1
+                swap_name_x2 = 'sw_'+name_x2
+                swap_name_y1 = 'sw_'+name_y1
+                swap_name_y2 = 'sw_'+name_y2
+                df_sw[swap_name_x1] = df[name_x1]
+                df_sw[swap_name_y1] = df[name_y2]
+                df_sw[swap_name_x2] = df[name_x2]
+                df_sw[swap_name_y2] = df[name_y1]
+                swaps.extend([swap_name_x1,swap_name_y1,swap_name_x2,swap_name_y2])
+            df = df.join(df_sw)
+            print(swaps)
+        if cross:
+            print("Creating cam1-cam2-crossed synthetic markers")
+            crosses = []
+            df_cx = pd.DataFrame()
+            for part in parts_unique_initial:
+                name_x1 = part+'_cam1_X'
+                name_x2 = part+'_cam2_X'
+                name_y1 = part+'_cam1_Y'
+                name_y2 = part+'_cam2_Y'
+                cross_name_x = 'cx_'+part+'_cam1x2_X'
+                cross_name_y = 'cx_'+part+'_cam1x2_Y'
+                df_cx[cross_name_x] = df[name_x1]*df[name_x2]
+                df_cx[cross_name_y] = df[name_y1]*df[name_y2]
+                crosses.extend([cross_name_x,cross_name_y])
+            df = df.join(df_cx)
+            print(crosses)
+        names_final = df.columns.values
+        parts_final = [name.rsplit('_',1)[0] for name in names_final]
+        parts_unique_final = []
+        for part in parts_final:
+            if not part in parts_unique_final:
+                parts_unique_final.append(part)
         print("Importing markers: ")
-        print(parts_unique)
+        print(parts_unique_final)
         unique_frames_set = {}
         unique_frames_set = {index for index in frame_indices if index not in unique_frames_set}
         unique_frames = sorted(unique_frames_set)
@@ -667,7 +709,7 @@ class Project:
         df['variable'],df['coords'] = new[0], new[1]
         df=df.rename(columns={'variable':'bodyparts'})
         df['coords']=df['coords'].str.rstrip(" ").str.lower()
-        cat_type = pd.api.types.CategoricalDtype(categories=parts_unique,ordered=True)
+        cat_type = pd.api.types.CategoricalDtype(categories=parts_unique_final,ordered=True)
         df['bodyparts']=df['bodyparts'].str.lstrip(" ").astype(cat_type)
         newdf = df.pivot_table(columns=['scorer', 'bodyparts', 'coords'],index='frame_index',values='value',aggfunc='first',dropna=False)
         newdf.index.name=None
@@ -687,7 +729,7 @@ class Project:
         tracked_files = [tracked_hdf, tracked_csv]
         self.updateWithFiles('spliceXma2Dlc', tracked_files)
         print("Successfully spliced XMALab 2D points to DLC format; saved "+str(data_name)+", "+str(tracked_hdf)+", and "+str(tracked_csv))
-        return parts_unique
+        return parts_unique_final
 
 
 
