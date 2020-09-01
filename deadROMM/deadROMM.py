@@ -59,7 +59,7 @@ model.vids_merged[0]
 #make loss plotter
 ###MONDAY:
 #refine
-store dir paths in framelog.yaml. write for new project and update for existing
+#store dir paths in framelog.yaml. write for new project and update for existing
 ##wishlist: mover helper to overwrite project paths in pose_cfg and config
 ##wishlist: new file deleter
 #wishlist: function to delete original extracted frame folders
