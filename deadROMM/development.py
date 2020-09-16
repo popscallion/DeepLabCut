@@ -10,11 +10,8 @@ importlib.reload(possumPolish)
 model = possumPolish.Project()
 config_path = model.load('./deadROMM/profiles-colab.yaml','dv101left', './dev/possum101_11Apr-Phil-2020-04-13-diff/config.yaml') #101L
 
-model.spliceXma2Dlc('/Volumes/GoogleDrive/My Drive/Development/DeepLabCut/videos/11Apr_diff.mp4',
-                        csv_path, frame_indices, outlier_mode=False, swap=True
 
 
-                        )
 
 
 experimenter='Phil'

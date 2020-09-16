@@ -2,6 +2,7 @@ import os
 import re
 import sys
 import datetime
+import shutil
 import warnings
 import importlib
 import cv2
@@ -640,6 +641,118 @@ class Project:
         for frame in frame_list:
             os.remove(frame)
         print("Deleted "+str(len(frame_list))+" DLC preview frames")
+
+    def swapFeaturesHdf(self, hdf_path, swap: bool, cross: bool):
+        swap_name = '_swap' if swap else ''
+        cross_name = '_cross' if cross else ''
+        new_name = swap_name+cross_name
+        df = pd.read_hdf(hdf_path, "df_with_missing")
+        df = df.reset_index().melt(id_vars=['index'])
+        names_initial = df.bodyparts.unique()
+        parts_initial = [name.rsplit('_',1)[0] for name in names_initial]
+        parts_unique_initial = []
+        for part in parts_initial:
+            if not part in parts_unique_initial:
+                parts_unique_initial.append(part)
+        bodyparts_XY=[]
+        for part in names_initial:
+                    bodyparts_XY.append(part+'_X')
+                    bodyparts_XY.append(part+'_Y')
+        df['id'] = df['bodyparts']+'_'+df['coords'].str.upper()
+        df = df.pivot(index='index',columns='id',values='value')
+        extracted_frames = [index.split('/',2)[-1] for index in df.index]
+        df = df.reindex(columns=bodyparts_XY)
+        if swap:
+            print("Creating cam1Y-cam2Y-swapped synthetic markers")
+            swaps = []
+            df_sw = pd.DataFrame()
+            for part in parts_unique_initial:
+                name_x1 = part+'_cam1_X'
+                name_x2 = part+'_cam2_X'
+                name_y1 = part+'_cam1_Y'
+                name_y2 = part+'_cam2_Y'
+                swap_name_x1 = 'sw_'+name_x1
+                swap_name_x2 = 'sw_'+name_x2
+                swap_name_y1 = 'sw_'+name_y1
+                swap_name_y2 = 'sw_'+name_y2
+                df_sw[swap_name_x1] = df[name_x1]
+                df_sw[swap_name_y1] = df[name_y2]
+                df_sw[swap_name_x2] = df[name_x2]
+                df_sw[swap_name_y2] = df[name_y1]
+                swaps.extend([swap_name_x1,swap_name_y1,swap_name_x2,swap_name_y2])
+            df = df.join(df_sw)
+            parts_postswap = df.columns.tolist()
+            print(swaps)
+        if cross:
+            print("Creating cam1-cam2-crossed synthetic markers")
+            crosses = []
+            df_cx = pd.DataFrame()
+            for part in parts_unique_initial:
+                name_x1 = part+'_cam1_X'
+                name_x2 = part+'_cam2_X'
+                name_y1 = part+'_cam1_Y'
+                name_y2 = part+'_cam2_Y'
+                cross_name_x = 'cx_'+part+'_cam1x2_X'
+                cross_name_y = 'cx_'+part+'_cam1x2_Y'
+                df_cx[cross_name_x] = df[name_x1]*df[name_x2]
+                df_cx[cross_name_y] = df[name_y1]*df[name_y2]
+                crosses.extend([cross_name_x,cross_name_y])
+            df = df.join(df_cx)
+            parts_postcross = df.columns.tolist()
+            print(crosses)
+        names_final = df.columns.values
+        parts_final = [name.rsplit('_',1)[0] for name in names_final]
+        parts_unique_final = []
+        for part in parts_final:
+            if not part in parts_unique_final:
+                parts_unique_final.append(part)
+        df['scorer']=self.experimenter
+        df['frame_index']=df.index
+        df = df.melt(id_vars=['frame_index','scorer'])
+        new = df['variable'].str.rsplit("_",n=1,expand=True)
+        df['variable'],df['coords'] = new[0], new[1]
+        df=df.rename(columns={'variable':'bodyparts'})
+        df['coords']=df['coords'].str.rstrip(" ").str.lower()
+        cat_type = pd.api.types.CategoricalDtype(categories=parts_unique_final,ordered=True)
+        df['bodyparts']=df['bodyparts'].str.lstrip(" ").astype(cat_type)
+        newdf = df.pivot_table(columns=['scorer', 'bodyparts', 'coords'],index='frame_index',values='value',aggfunc='first',dropna=False)
+        newdf.index.name=None
+        ts = self.getTimeStamp()
+        data_name = os.path.join(os.path.dirname(hdf_path),(os.path.splitext(os.path.basename(hdf_path))[0]+new_name+'.h5'))
+        tracked_hdf = os.path.join(os.path.dirname(hdf_path),(os.path.splitext(os.path.basename(hdf_path))[0]+new_name+ts+'.h5'))
+        newdf.to_hdf(data_name, 'df_with_missing', format='table', mode='w')
+        newdf.to_hdf(tracked_hdf, 'df_with_missing', format='table', mode='w')
+        tracked_csv = data_name.split('.h5')[0]+'_'+ts+'.csv'
+        newdf.to_csv(tracked_csv)
+        tracked_files = [tracked_hdf, tracked_csv]
+        self.updateWithFiles(new_name[1:], tracked_files)
+        print("Successfully generated synthetic features; saved "+str(data_name)+", "+str(tracked_hdf)+", and "+str(tracked_csv))
+        return parts_unique_final
+
+    def swapCrossPoseCfgs(self, train_yaml, test_yaml, bodyparts):
+        ts = self.getTimeStamp()
+        new_train = os.path.join(os.path.dirname(train_yaml),(os.path.splitext(os.path.basename(train_yaml))[0]+'_swcx_'+ts+'.yaml'))
+        new_test = os.path.join(os.path.dirname(test_yaml),(os.path.splitext(os.path.basename(test_yaml))[0]+'_swcx_'+ts+'.yaml'))
+        new_config = os.path.join(os.path.dirname(self.yaml),(os.path.splitext(os.path.basename(self.yaml))[0]+'_swcx_'+ts+'.yaml'))
+        shutil.copyfile(train_yaml, new_train)
+        shutil.copyfile(test_yaml, new_test)
+        shutil.copyfile(self.yaml, new_config)
+        train_file = ruamel.yaml.load(open(new_train))
+        test_file = ruamel.yaml.load(open(new_test))
+        config_file = ruamel.yaml.load(open(new_config))
+        all_joints_formatted = [[i] for i in range(len(bodyparts))]
+        train_file['all_joints_names'] = bodyparts
+        test_file['all_joints_names'] = bodyparts
+        config_file['bodyparts'] = bodyparts
+        train_file['all_joints'] = all_joints_formatted
+        test_file['all_joints'] = all_joints_formatted
+        with open(new_train, 'w') as file:
+            ruamel.yaml.round_trip_dump(train_file, file)
+        with open(new_test, 'w') as file:
+            ruamel.yaml.round_trip_dump(test_file, file)
+        with open(new_config, 'w') as file:
+            ruamel.yaml.round_trip_dump(config_file, file)
+
 
     def spliceXma2Dlc(self, substitute_video, csv_path, frame_indices, outlier_mode=False, swap=False, cross=False):
         # Takes csv of XMALab 2D XY coordinates from 2 cameras, outputs spliced hdf+csv data for DeepLabCut
