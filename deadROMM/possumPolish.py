@@ -743,15 +743,20 @@ class Project:
         all_joints_formatted = [[i] for i in range(len(bodyparts))]
         train_file['all_joints_names'] = bodyparts
         test_file['all_joints_names'] = bodyparts
+        train_file['num_joints'] = len(bodyparts)
+        test_file['num_joints'] = len(bodyparts)
         config_file['bodyparts'] = bodyparts
         train_file['all_joints'] = all_joints_formatted
         test_file['all_joints'] = all_joints_formatted
         with open(new_train, 'w') as file:
             ruamel.yaml.round_trip_dump(train_file, file)
+        print('saved '+new_train)
         with open(new_test, 'w') as file:
             ruamel.yaml.round_trip_dump(test_file, file)
+        print('saved '+new_test)
         with open(new_config, 'w') as file:
             ruamel.yaml.round_trip_dump(config_file, file)
+        print('saved '+new_config)
 
 
     def spliceXma2Dlc(self, substitute_video, csv_path, frame_indices, outlier_mode=False, swap=False, cross=False):
