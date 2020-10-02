@@ -7,6 +7,9 @@ import warnings
 import importlib
 import cv2
 import zipfile
+from PIL import Image
+from subprocess import Popen, PIPE
+import blend_modes
 import ruamel.yaml
 import matplotlib.pyplot as plt
 import numpy as np
@@ -507,6 +510,236 @@ class Project:
         print("Finished extracting .pngs from "+str(os.path.basename(video_path)))
         return png_list
 
+    def changeFileName(self, file_path, insertion, new_extension=None, pos=0):
+        # Given any filepath, inserts a custom string insertion at position pos. Default behavior is prefix.
+        location, name = os.path.split(file_path)
+        left, right = name[:pos], name[pos:]
+        modified_name = left + insertion + right
+        if new_extension != None:
+            temp_name, old_ext = os.path.splitext(modified_name)
+            modified_name = temp_name + new_extension
+        result = os.path.join(location, modified_name)
+        return result
+
+    def bakeMetadata(self, input_path, output_path, codec='avc1'):
+        # Bakes experiment metadata (Experiment day, trial condition, frame number) into each video frame. Expects the following folder structure: `[experiment]/[trial]/[video]`.
+        def getImmediateAncestors(file_path, depth=1):
+            # Returns a list of a given path's immediate parent directories, in ascending order. Level is specified as `depth`.
+            result = []
+            for i in range(depth):
+                parent_path, child_name = os.path.split(file_path)
+                file_path = parent_path
+                result.append(child_name)
+            return result
+        cap = cv2.VideoCapture(input_path)
+        frame_width = int(cap.get(3))
+        frame_height = int(cap.get(4))
+        frame_rate = round(cap.get(5),2)
+        pos_x = round(frame_width/50)
+        off_y = round(frame_height/50)
+        off_y_initial = off_y
+        frame_index = 1
+        metadata = getImmediateAncestors(input_path, 3)[1:]
+        metadata.append(frame_index)
+        font_family = cv2.FONT_HERSHEY_SIMPLEX
+        font_size = 0.4
+        font_color = (255, 255, 255)
+        if codec == 'uncompressed':
+            pix_format = 'gray'   ##change to 'yuv420p' for color or 'gray' for grayscale. 'pal8' doesn't play on macs
+            p = Popen(['ffmpeg', '-y', '-f', 'image2pipe', '-vcodec', 'png', '-r', str(int(frame_rate)), '-i', '-', '-vcodec', 'rawvideo','-pix_fmt',pix_format,'-r', str(int(frame_rate)), output_video], stdin=PIPE)
+        else:
+            if codec == 0:
+                fourcc = 0
+            else:
+                fourcc = cv2.VideoWriter_fourcc(*codec)
+            out = cv2.VideoWriter(output_path,
+                                  fourcc,
+                                  frame_rate,(frame_width, frame_height))
+        while(cap.isOpened()):
+            ret, frame = cap.read()
+            if ret == True:
+                off_y = off_y_initial
+                for metadatum in metadata:
+                    pos_y = frame_height-off_y
+                    frame = cv2.putText(frame, str(metadatum), (pos_x, pos_y), font_family,
+                                        font_size, font_color)
+                    off_y = off_y+off_y_initial
+                cv2.imshow('frame',frame)
+                frame_index += 1
+                metadata.pop()
+                metadata.append(frame_index)
+                if codec == 'uncompressed':
+                    im = Image.fromarray(frame)
+                    im.save(p.stdin, 'PNG')
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        breakw
+                else:
+                    out.write(frame)
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        break
+            else:
+                break
+        if codec == 'uncompressed':
+            p.stdin.close()
+            p.wait()
+        cap.release()
+        if codec != 'uncompressed':
+            out.release()
+        cv2.destroyAllWindows()
+        print("done!")
+        return output_path
+
+
+    def sortByCameraID(self, path_list, prefixes=['Cam','C00'], number_of_cameras=2):
+        # Given a list of file paths, returns a list of lists sorted by camera identifier (in the format prefix->camera#).
+        triaged_lists = [[] for cameras in range(number_of_cameras)]
+        for i, triaged_list in enumerate(triaged_lists, start=1):
+            for path in path_list:
+                for prefix in prefixes:
+                    match_string = prefix+str(i)
+                    if re.search(match_string, path):
+                        triaged_list.append(path)
+                        break
+        return triaged_lists
+
+    def concatenateVideos(self, path_list, output_path, codec='avc1', interval=1):
+        # Given a list of video paths, concatenates them into one long video. Passing in an optional downsampling factor tells the function to only capture one in every n frames.
+        frame_index = 0
+        video_index = 0
+        cap = cv2.VideoCapture(path_list[0])
+        frame_width = int(cap.get(3))
+        frame_height = int(cap.get(4))
+        frame_rate = round(cap.get(5),2)/interval
+        fourcc = cv2.VideoWriter_fourcc(*codec)
+        out = cv2.VideoWriter(output_path,
+                              fourcc,
+                              frame_rate,(frame_width, frame_height))
+        while(cap.isOpened()):
+            ret, frame = cap.read()
+            frame_index += 1
+            if frame is None:
+                print("end of video " + str(video_index) + " ... next one now")
+                video_index += 1
+                if video_index >= len(path_list):
+                    break
+                cap = cv2.VideoCapture(path_list[ video_index ])
+                frame_index = 0
+            elif frame_index == interval:
+                frame = frame.astype(np.uint8)
+                cv2.imshow('frame',frame)
+                out.write(frame)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+                frame_index = 0
+        cap.release()
+        out.release()
+        cv2.destroyAllWindows()
+        print("done!")
+        return output_path
+
+
+    def mergeRGB(self, video_dict, output_path, codec='avc1', mode=None):
+        # Takes a dictionary containing two video paths in the format `{'A':[path A], 'B':[path B]}` and exports a single new video with video A written to the red channel and video B written to the green channel. The blue channel is, depending on the value passed as "mode", either the difference blend between A and B, the multiply blend, or just a black frame. Output_path must contain extension.
+        capA = cv2.VideoCapture(video_dict['A'])
+        capB = cv2.VideoCapture(video_dict['B'])
+        frame_width = int(capA.get(3))
+        frame_height = int(capA.get(4))
+        frame_rate = round(capA.get(5),2)
+        fourcc = cv2.VideoWriter_fourcc(*codec)
+        out = cv2.VideoWriter(output_path,
+                             fourcc,
+                             frame_rate,(frame_width, frame_height))
+        while(capA.isOpened()):
+            retA, frameA = capA.read()
+            retB, frameB = capB.read()
+            if retA == True:
+                frameA = cv2.cvtColor(frameA, cv2.COLOR_BGR2BGRA,4).astype(np.float32)
+                frameB = cv2.cvtColor(frameB, cv2.COLOR_BGR2BGRA,4).astype(np.float32)
+                frameA = cv2.normalize(frameA, None, 0, 255, norm_type=cv2.NORM_MINMAX)
+                frameB = cv2.normalize(frameB, None, 0, 255, norm_type=cv2.NORM_MINMAX)
+                if mode == "difference":
+                    extraChannel = blend_modes.difference(frameA,frameB,1)
+                elif mode == "multiply":
+                    extraChannel = blend_modes.multiply(frameA,frameB,1)
+                else:
+                    extraChannel = np.zeros((frame_width, frame_height,3),np.uint8)
+                    extraChannel = cv2.cvtColor(extraChannel, cv2.COLOR_BGR2BGRA,4).astype(np.float32)
+                frameA = cv2.cvtColor(frameA, cv2.COLOR_BGRA2BGR).astype(np.uint8)
+                frameB = cv2.cvtColor(frameB, cv2.COLOR_BGRA2BGR).astype(np.uint8)
+                extraChannel = cv2.cvtColor(extraChannel, cv2.COLOR_BGRA2BGR).astype(np.uint8)
+                frameA = cv2.cvtColor(frameA, cv2.COLOR_BGR2GRAY)
+                frameB = cv2.cvtColor(frameB, cv2.COLOR_BGR2GRAY)
+                extraChannel = cv2.cvtColor(extraChannel, cv2.COLOR_BGR2GRAY)
+                merged = cv2.merge((extraChannel, frameB, frameA))
+                cv2.imshow('merged',merged)
+                out.write(merged)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+            else:
+                break
+        capA.release()
+        capB.release()
+        out.release()
+        cv2.destroyAllWindows()
+        print("done!")
+        return output_path
+
+
+    def splitRGB(self, input_path, codec='avc1'):
+        # Takes a RGB video with different grayscale data written to the R, G, and B channels and splits it back into its component source videos.
+        out_name = os.path.splitext(os.path.basename(input_path))[0]+'_split_'
+        cap = cv2.VideoCapture(input_path)
+        frame_width = int(cap.get(3))
+        frame_height = int(cap.get(4))
+        frame_rate = round(cap.get(5),2)
+        if codec == 'uncompressed':
+            pix_format = 'gray'   ##change to 'yuv420p' for color or 'gray' for grayscale. 'pal8' doesn't play on macs
+            p1 = Popen(['ffmpeg', '-y', '-f', 'image2pipe', '-vcodec', 'png', '-r', str(int(frame_rate)), '-i', '-', '-vcodec', 'rawvideo','-pix_fmt',pix_format,'-r', str(int(frame_rate)), out_name+'c1.avi'], stdin=PIPE)
+            p2 = Popen(['ffmpeg', '-y', '-f', 'image2pipe', '-vcodec', 'png', '-r', str(int(frame_rate)), '-i', '-', '-vcodec', 'rawvideo','-pix_fmt',pix_format,'-r', str(int(frame_rate)), out_name+'c2.avi'], stdin=PIPE)
+        else:
+            if codec == 0:
+                fourcc = 0
+            else:
+                fourcc = cv2.VideoWriter_fourcc(*codec)
+            out1 = cv2.VideoWriter(out_name+'c1.mp4',
+                                  fourcc,
+                                  frame_rate,(frame_width, frame_height))
+            out2 = cv2.VideoWriter(out_name+'c2.mp4',
+                                  fourcc,
+                                  frame_rate,(frame_width, frame_height))
+
+        while(cap.isOpened()):
+            ret, frame = cap.read()
+            if ret == True:
+                B, G, R = cv2.split(frame)
+                cv2.imshow('frame',R)
+                if codec == 'uncompressed':
+                    imR = Image.fromarray(R)
+                    imG = Image.fromarray(G)
+                    imR.save(p1.stdin, 'PNG')
+                    imG.save(p2.stdin, 'PNG')
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        break
+                else:
+                    out1.write(R)
+                    out2.write(G)
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        break
+            else:
+                break
+        if codec == 'uncompressed':
+            p1.stdin.close()
+            p1.wait()
+            p2.stdin.close()
+            p2.wait()
+        cap.release()
+        if codec != 'uncompressed':
+            out1.release()
+            out2.release()
+        cv2.destroyAllWindows()
+        print("done!")
+        return [out_name+'c1.mp4', out_name+'c2.mp4']
+
     def getTimeStamp(self):
         ts = datetime.datetime.now().strftime("%d%b%y_%Hh%Mm%Ss")
         return ts
@@ -551,12 +784,6 @@ class Project:
         print("Successfully migrated project")
         return
 
-    def convertXMAProject(self):
-        #xmapath = r"C:\Users\Phil\Downloads\11Apr18.LaiRegnault.SEP101.LS.biceps_teres_lat.precals.xma"
-        #zf = zipfile.ZipFile(xmapath, 'r')
-        #zf.namelist()
-        #find project.xml, overwrite 2 instances of <CalibrationSequence Filename>
-        return
 
     def filterByExtension(self, list, extension):
         filtered_list = [path for path in list if extension in os.path.splitext(path)[1]]
