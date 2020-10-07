@@ -188,7 +188,7 @@ class Project:
             else:
                 sys.exit("Profile does not exist in profiles.yaml")
 
-    def filterPredictions(self, analysis_h5, frame_paths, condition_name):
+    def subsetPredictions(self, analysis_h5, frame_paths, condition_name):
       # frame_paths should come from match_outliers
       filenames = [os.path.basename(path) for path in frame_paths if os.path.splitext(path)[1]=='.png']
       unique_names = {}
@@ -204,8 +204,8 @@ class Project:
       tracked_hdf = data_name + ".h5"
       df_with_names.to_hdf(tracked_hdf, 'df_with_missing', format='table', mode='w')
       tracked_files = [tracked_hdf]
-      self.updateWithFiles('filterPredictions_'+condition_name, tracked_files)
-      print("Successfully filtered model predictions; saved "+str(tracked_hdf))
+      self.updateWithFiles('subsetPredictions_'+condition_name, tracked_files)
+      print("Successfully subset model predictions; saved "+str(tracked_hdf))
       self.splitDlc2Xma(tracked_hdf, self.markers)
 
     def getOutliers(self, num2extract, markers2watch={'c1':[],'c2':[]}, outlier_algo='uncertain', make_labels=False):
@@ -268,6 +268,7 @@ class Project:
         outlier_indices = self.matchFrames(newfiles)
         matched_outlier_frames = self.updateWithFunc('match_outliers', self.extractMatchedFrames, outlier_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_outlier', timestamp=True)[1]
         h5s = [path for path in newfiles if 'h5' in path]
+        print(newfiles)
         self.splitDlc2Xma(h5s[0], self.markers, newfiles)
 
     def updateConfig(self, project_path=None, event={}, videos=[],bodyparts=[],numframes2pick=None,corner2move2=None, pcutoff=None, increment_iteration=False):
@@ -463,8 +464,8 @@ class Project:
       latest = os.path.join(snapshot_dir, sorted_uniques[0])
       return latest
 
-    def vidToPngs(self, video_path, output_dir=None, indices_to_match=[], name_from_folder=True):
-        # Takes a list of frame numbers and exports matching frames from a video as pngs.
+    def vidToPngs(self, video_path, output_dir=None, indices_to_match=[], name_from_folder=True, compression=0):
+        # Takes a list of frame numbers and exports matching frames from a video as pngs. Optionally, compress the output PNGs. Factor ranges from 0 (no compression) to 9 (most compression)
         frame_index = 0
         frame_counter = 0
         png_list = []
@@ -477,7 +478,7 @@ class Project:
         else:
             out_dir = output_dir
         if not os.path.exists(out_dir):
-            os.mkdir(out_dir)
+            os.makedirs(out_dir)
         cap = cv2.VideoCapture(video_path)
         frame_width = int(cap.get(3))
         frame_height = int(cap.get(4))
@@ -498,7 +499,7 @@ class Project:
                         plt.show()
                     else:
                         cv2.imshow('frame',frame)
-                    cv2.imwrite(png_path, frame)
+                    cv2.imwrite(png_path, frame, [cv2.IMWRITE_PNG_COMPRESSION, compression])
                     frame_counter = 0
                     if cv2.waitKey(1) & 0xFF == ord('q'):
                             break
@@ -799,8 +800,8 @@ class Project:
         print("Found "+str(len(result))+" unique frame indices")
         return result
 
-    def extractMatchedFrames(self, indices, output_dir, src_vids=[], folder_suffix=None, timestamp=False):
-        # Given a list of frame indices and a list of source videos, produces one folder of matching frame pngs per source video.
+    def extractMatchedFrames(self, indices, output_dir, src_vids=[], folder_suffix=None, timestamp=False, compression=0):
+        # Given a list of frame indices and a list of source videos, produces one folder of matching frame pngs per source video. Optionally, compress the output PNGs. Factor ranges from 0 (no compression) to 9 (most compression)
         extracted_frames = []
         if timestamp:
             ts = '_'+self.getTimeStamp()
@@ -812,7 +813,7 @@ class Project:
             else:
                 out_name = os.path.splitext(os.path.basename(video))[0]+ts
             output = os.path.join(output_dir,out_name)
-            frames_from_vid = self.vidToPngs(video, output, indices_to_match=indices, name_from_folder=False)
+            frames_from_vid = self.vidToPngs(video, output, indices_to_match=indices, name_from_folder=False, compression=compression)
             extracted_frames.append(frames_from_vid)
         combined_list = [y for x in extracted_frames for y in x]
         print("Extracted "+str(len(indices))+" matching frames from each of "+str(len(src_vids))+" source videos")
@@ -826,11 +827,22 @@ class Project:
             sys.exit("Pipeline terminated.")
         indices_to_import = self.matchFrames(self.config['history'][event]['files'])
         if indices_to_drop:
+            print(indices_to_import)
+            csv_indices = range(len(indices_to_import))
+            print(csv_indices)
+            index_dict = dict(zip(indices_to_import, csv_indices))
             indices_to_import = list(sorted(set(indices_to_import).difference(set(indices_to_drop))))
+            csv_indices_to_import = [index_dict[x] for x in indices_to_import]
+            print(csv_indices_to_import)
+            print(indices_to_import)
             df=pd.read_csv(csv_path,sep=',',header=0,dtype='float')
-            df1=df.iloc[indices_to_import]
-            new_path = os.path.join(os.path.dirname(csv_path),os.path.splitext(os.path.basename(csv_path))[0]+'_clean.csv')
-            df1.to_csv(new_path,index=False)
+            backup_path = os.path.join(os.path.dirname(csv_path),os.path.splitext(os.path.basename(csv_path))[0]+'_with_undigitizable.csv')
+            df.to_csv(backup_path,index=False)
+            df1=df.iloc[csv_indices_to_import]
+            df1.to_csv(csv_path,index=False)
+            ts = self.getTimeStamp()
+            update = {ts:{'operation':'dropUndigitizableFrames','files':indices_to_drop}}
+            self.updateConfig(event=update)
         spliced_markers = self.spliceXma2Dlc(self.vids_merged[0], csv_path, indices_to_import, outlier_mode, swap, cross)
         self.extractMatchedFrames(indices_to_import, output_dir=self.dirs['labeled'], src_vids=self.vids_merged)
         self.updateConfig(videos=self.vids_merged, bodyparts=spliced_markers)
@@ -1060,7 +1072,7 @@ class Project:
         newdf.index.name=None
         ts = self.getTimeStamp()
         if not os.path.exists(substitute_data_abspath):
-            os.mkdir(substitute_data_abspath)
+            os.makedirs(substitute_data_abspath)
         if outlier_mode:
             data_name = os.path.join(substitute_data_abspath,"MachineLabelsRefine.h5")
             tracked_hdf = os.path.join(substitute_data_abspath,("MachineLabelsRefine_"+ts+".h5"))
@@ -1076,15 +1088,23 @@ class Project:
         print("Successfully spliced XMALab 2D points to DLC format; saved "+str(data_name)+", "+str(tracked_hdf)+", and "+str(tracked_csv))
         return parts_unique_final
 
+    def filter_by_likelihood(self, df, p_cutoff):
+        scorer, bodyparts = list(df.columns.levels[0])[0], list(df.columns.levels[1])
+        for part in bodyparts:
+            df.loc[:,(scorer,part,'x')].mask(df.loc[:,(scorer,part,'likelihood')] < p_cutoff, inplace=True)
+            df.loc[:,(scorer,part,'y')].mask(df.loc[:,(scorer,part,'likelihood')] < p_cutoff, inplace=True)
+        return df
 
-
-    def splitDlc2Xma(self, hdf_path, bodyparts, frame_paths=[]):
+    def splitDlc2Xma(self, hdf_path, bodyparts, frame_paths=[], interval=1, likelihood_threshold=0):
+        p_string = '_p'+str(likelihood_threshold)+'_' if likelihood_threshold else ''
+        interval_string = 'every'+str(interval) if interval != 1 else ''
         bodyparts_XY = []
         ts = self.getTimeStamp()
         for part in bodyparts:
             bodyparts_XY.append(part+'_X')
             bodyparts_XY.append(part+'_Y')
         df=pd.read_hdf(hdf_path)
+        df=df[::interval]
         if frame_paths:
             def get_index(path):
                 [png_parent, png] = os.path.split(path)
@@ -1097,14 +1117,19 @@ class Project:
             unique_pngs = {png for png in pngs if png not in unique_pngs}
             sorted_pngs = sorted(unique_pngs)
             df=df.loc[df.index.intersection(sorted_pngs)]
+        if likelihood_threshold:
+            df = self.filter_by_likelihood(df, likelihood_threshold)
         df = df.reset_index().melt(id_vars=['index'])
         df = df[df['coords'] != 'likelihood']
         df['id'] = df['bodyparts']+'_'+df['coords'].str.upper()
         df[['index','value','id']]
         df = df.pivot(index='index',columns='id',values='value')
-        extracted_frames = [index.split('\\')[-1] for index in df.index]
+        if type(df.index[0]) == str:
+            extracted_frames = [index.split('\\')[-1] for index in df.index]
+        else:
+            extracted_frames = list(df.index)
         df = df.reindex(columns=bodyparts_XY)
-        tracked_csv = os.path.splitext(hdf_path)[0]+'_split_'+ts+'.csv'
+        tracked_csv = os.path.splitext(hdf_path)[0]+'_split_'+p_string+ts+'.csv'
         df.to_csv(tracked_csv,index=False)
         self.updateWithFiles('splitDlc2Xma', [tracked_csv])
         print("Successfully split DLC format to XMALab 2D points; saved "+str(tracked_csv))
