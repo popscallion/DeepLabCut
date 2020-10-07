@@ -837,9 +837,9 @@ class Project:
             print(indices_to_import)
             df=pd.read_csv(csv_path,sep=',',header=0,dtype='float')
             backup_path = os.path.join(os.path.dirname(csv_path),os.path.splitext(os.path.basename(csv_path))[0]+'_with_undigitizable.csv')
-            df.to_csv(backup_path,index=False)
+            df.to_csv(backup_path,index=False, na_rep='NaN')
             df1=df.iloc[csv_indices_to_import]
-            df1.to_csv(csv_path,index=False)
+            df1.to_csv(csv_path,index=False, na_rep='NaN')
             ts = self.getTimeStamp()
             update = {ts:{'operation':'dropUndigitizableFrames','files':indices_to_drop}}
             self.updateConfig(event=update)
@@ -962,7 +962,7 @@ class Project:
         newdf.to_hdf(data_name, 'df_with_missing', format='table', mode='w')
         newdf.to_hdf(tracked_hdf, 'df_with_missing', format='table', mode='w')
         tracked_csv = data_name.split('.h5')[0]+'_'+ts+'.csv'
-        newdf.to_csv(tracked_csv)
+        newdf.to_csv(tracked_csv, na_rep='NaN')
         tracked_files = [tracked_hdf, tracked_csv]
         self.updateWithFiles(new_name[1:], tracked_files)
         print("Successfully generated synthetic features; saved "+str(data_name)+", "+str(tracked_hdf)+", and "+str(tracked_csv))
@@ -1082,7 +1082,7 @@ class Project:
         newdf.to_hdf(data_name, 'df_with_missing', format='table', mode='w')
         newdf.to_hdf(tracked_hdf, 'df_with_missing', format='table', mode='w')
         tracked_csv = data_name.split('.h5')[0]+'_'+ts+'.csv'
-        newdf.to_csv(tracked_csv)
+        newdf.to_csv(tracked_csv, na_rep='NaN')
         tracked_files = [tracked_hdf, tracked_csv]
         self.updateWithFiles('spliceXma2Dlc', tracked_files)
         print("Successfully spliced XMALab 2D points to DLC format; saved "+str(data_name)+", "+str(tracked_hdf)+", and "+str(tracked_csv))
@@ -1130,7 +1130,7 @@ class Project:
             extracted_frames = list(df.index)
         df = df.reindex(columns=bodyparts_XY)
         tracked_csv = os.path.splitext(hdf_path)[0]+'_split_'+p_string+ts+'.csv'
-        df.to_csv(tracked_csv,index=False)
+        df.to_csv(tracked_csv,index=False, na_rep='NaN')
         self.updateWithFiles('splitDlc2Xma', [tracked_csv])
         print("Successfully split DLC format to XMALab 2D points; saved "+str(tracked_csv))
         return extracted_frames
