@@ -82,8 +82,9 @@ class Project:
         self.updateConfig(bodyparts=self.markers, numframes2pick=self.num_to_extract, corner2move2=self.corner2move2, pcutoff=self.pcutoff)
         extraction_event, extracted_frames = self.updateWithFunc('extract', self.trackFiles, self.dirs['labeled'], dlc.extract_frames, self.yaml, userfeedback=False)
         extracted_frames_final = self.exciseRevise(extraction_event, self.findBlanks(extracted_frames,return_indices=True))[0]
-        extracted_indices = self.matchFrames(extracted_frames_final) #get indices of extracted frames
+        extracted_indices = self.matchFrames(extracted_frames_final) 
         matched_frames = self.updateWithFunc('match_extracted', self.extractMatchedFrames, extracted_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_matched', timestamp=True)[1]
+        self.cleanup([extraction_event])
         print("Succesfully created a new DeepLabCut project and performed initial frame extraction. Frames for XMALab are in "+str(self.dirs['xma']))
 
     def updateWithFunc(self, type, func, *args, **kwargs):
