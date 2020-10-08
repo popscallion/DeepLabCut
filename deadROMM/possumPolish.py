@@ -235,10 +235,21 @@ class Project:
               specifyOutliers(markers2watch)
             print('Markers selected.')
             return markers2watch
+        ts = self.getTimeStamp()
         self.updateConfig(numframes2pick=num2extract)
         markers2watch = specifyOutliers(markers2watch)
         if make_labels:
             self.deleteLabeledFrames(self.dirs['labeled'])
+        old_h5_path = os.path.join(self.dirs['spliced'],'machinelabels-iter'+str(self.config['iteration'])+'.h5')
+        old_csv_path = os.path.join(self.dirs['spliced'],'machinelabels.csv')
+        if os.path.exists(old_h5_path):
+            new_h5_path = os.path.join(self.dirs['spliced'],'machinelabels-iter'+str(self.config['iteration'])+'_'+ts+'.h5')
+            os.rename(old_h5_path, new_h5_path)
+            print('Renaming existing machinelabels h5 to '+new_h5_path)
+        if os.path.exists(old_csv_path):
+            new_csv_path = os.path.join(self.dirs['spliced'],'machinelabels_'+ts+'.csv')
+            os.rename(old_csv_path, new_csv_path)
+            print('Renaming existing machinelabels csv to '+new_csv_path)
         extraction_event_cam1, outliers_cam1 = self.updateWithFunc('outliers_cam1', self.trackFiles, self.dirs['spliced'],
                                                 dlc.extract_outlier_frames,
                                                 self.yaml,
