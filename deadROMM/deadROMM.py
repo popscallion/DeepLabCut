@@ -165,7 +165,7 @@ def xmalab2dlc(run,csv_path,labeled_data_path, width=1024, h_flip=False):
 # ## Refine Labels [optional step]
 # Following the extraction of outlier frames, the user can use the following function to move the predicted labels to the correct location. Thus augmenting the training dataset.
 # %% codecell
-%gui wx
+# %gui wx
 deeplabcut.refine_labels(path_config_file)
 # %% markdown
 # **NOTE:** Afterwards, if you want to look at the adjusted frames, you can load them in the main GUI by running: ``deeplabcut.label_frames(path_config_file)``

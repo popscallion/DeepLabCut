@@ -1,6 +1,8 @@
 import os
 import re
 import sys
+import time
+import math
 import datetime
 import shutil
 import warnings
@@ -12,10 +14,13 @@ from subprocess import Popen, PIPE
 import blend_modes
 import ruamel.yaml
 import matplotlib.pyplot as plt
+from IPython import display
 import numpy as np
 import pandas as pd
 from scipy import stats
 import deeplabcut as dlc
+
+
 
 class Project:
     def __init__(self):
@@ -23,8 +28,15 @@ class Project:
         self.num_to_extract = 20
         self.corner2move2 = 512
         self.outlier_epsilon = 30
-        self.p_bound = 0.01
+        self.likelihood_cutoff = 0.01
         self.pcutoff = 0.5
+        self.autocorrect_params = {
+            'likelihood_cutoff': 0.01, # Points with a lower likelihood value than this will not be corrected
+            'search_area': 15, # This value (in pixels) is doubled to determine the search area for local thresholding. Use 'snap_distance_cutoff' to limit max distance for marker adjustment.
+            'search_preview_scale': 5,
+            'mask_size': 5,
+            'marker_threshold' : 8,
+            'snap_distance_cutoff': 10} # Max distance in pixels between best detected point and original point. Should always be smaller than 'search_area'.
         self.yaml = None
         self.wd = None
         self.experiment = None
@@ -82,7 +94,7 @@ class Project:
         self.updateConfig(bodyparts=self.markers, numframes2pick=self.num_to_extract, corner2move2=self.corner2move2, pcutoff=self.pcutoff)
         extraction_event, extracted_frames = self.updateWithFunc('extract', self.trackFiles, self.dirs['labeled'], dlc.extract_frames, self.yaml, userfeedback=False)
         extracted_frames_final = self.exciseRevise(extraction_event, self.findBlanks(extracted_frames,return_indices=True))[0]
-        extracted_indices = self.matchFrames(extracted_frames_final) 
+        extracted_indices = self.matchFrames(extracted_frames_final)
         matched_frames = self.updateWithFunc('match_extracted', self.extractMatchedFrames, extracted_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_matched', timestamp=True)[1]
         self.cleanup([extraction_event])
         print("Succesfully created a new DeepLabCut project and performed initial frame extraction. Frames for XMALab are in "+str(self.dirs['xma']))
@@ -209,7 +221,7 @@ class Project:
       print("Successfully subset model predictions; saved "+str(tracked_hdf))
       self.splitDlc2Xma(tracked_hdf, self.markers)
 
-    def getOutliers(self, num2extract, markers2watch={'c1':[],'c2':[]}, outlier_algo='uncertain', make_labels=False):
+    def getOutliers(self, num2extract, markers2watch={'c1':[],'c2':[]}, outlier_algo='jump', make_labels=False):
         '''
         Independently identifies outlier frames for two cameras, extracts the corresponding frames, and converts DeepLabCut predictions for those frames to XMALab format
             Parameters:
@@ -257,7 +269,7 @@ class Project:
                                                 self.vids_merged,
                                                 outlieralgorithm=outlier_algo,
                                                 extractionalgorithm='kmeans',
-                                                p_bound = self.p_bound,
+                                                p_bound = self.likelihood_cutoff,
                                                 automatic=True,
                                                 epsilon=self.outlier_epsilon,
                                                 comparisonbodyparts = markers2watch['c1'],
@@ -269,7 +281,7 @@ class Project:
                                                 self.vids_merged,
                                                 outlieralgorithm=outlier_algo,
                                                 extractionalgorithm='kmeans',
-                                                p_bound = self.p_bound,
+                                                p_bound = self.likelihood_cutoff,
                                                 automatic=True,
                                                 epsilon=self.outlier_epsilon,
                                                 comparisonbodyparts = markers2watch['c2'],
@@ -281,7 +293,7 @@ class Project:
         matched_outlier_frames = self.updateWithFunc('match_outliers', self.extractMatchedFrames, outlier_indices, output_dir = self.dirs['xma'], src_vids = self.vids_separate, folder_suffix='_outlier', timestamp=True)[1]
         h5s = [path for path in newfiles if 'h5' in path]
         print(newfiles)
-        self.splitDlc2Xma(h5s[0], self.markers, newfiles)
+        self.splitDlc2Xma(h5s[0], self.markers, newfiles, likelihood_threshold=self.likelihood_cutoff)
 
     def updateConfig(self, project_path=None, event={}, videos=[],bodyparts=[],numframes2pick=None,corner2move2=None, pcutoff=None, increment_iteration=False):
         '''
@@ -812,49 +824,54 @@ class Project:
         print("Found "+str(len(result))+" unique frame indices")
         return result
 
-    def extractMatchedFrames(self, indices, output_dir, src_vids=[], folder_suffix=None, timestamp=False, compression=0):
+    def extractMatchedFrames(self, indices, output_dir, src_vids=[], folder_suffix=None, timestamp=False, compression=1):
         # Given a list of frame indices and a list of source videos, produces one folder of matching frame pngs per source video. Optionally, compress the output PNGs. Factor ranges from 0 (no compression) to 9 (most compression)
         extracted_frames = []
+        new_dirs = []
         if timestamp:
             ts = '_'+self.getTimeStamp()
         else:
             ts = ''
         for video in src_vids:
             if folder_suffix:
-                out_name = os.path.splitext(os.path.basename(video))[0]+folder_suffix+ts
+                out_name = os.path.splitext(os.path.basename(video))[0]+'_'+folder_suffix+ts
             else:
                 out_name = os.path.splitext(os.path.basename(video))[0]+ts
             output = os.path.join(output_dir,out_name)
             frames_from_vid = self.vidToPngs(video, output, indices_to_match=indices, name_from_folder=False, compression=compression)
             extracted_frames.append(frames_from_vid)
+            new_dirs.append(output)
         combined_list = [y for x in extracted_frames for y in x]
         print("Extracted "+str(len(indices))+" matching frames from each of "+str(len(src_vids))+" source videos")
-        return combined_list
+        return [combined_list, new_dirs]
 
-    def importXma(self, event, csv_path=None, outlier_mode=False, indices_to_drop=[], swap=False, cross=False):
-        # Interactively imports labels from XMALab by substituting frames from merged video for original raw frames. Updates config.yaml to point to substituted video.
+    def importXma(self, event, csv_path=None, outlier_mode=False, indices_to_drop=[], xma_indices = False, swap=False, cross=False):
+        # Interactively imports labels from XMALab by substituting frames from merged video for original raw frames. Updates config.yaml to point to substituted video. Takes indices from the spliced video by default, set xma_indices to true when using in outlier mode to pass in 0-indexed frame indices from an individual outlier trial instead.
         if not csv_path:
             csv_path = input("Enter the full path to XMALab 2D XY coordinates csv, or type 'quit' to abort.").strip('"')
         if csv_path == "quit":
             sys.exit("Pipeline terminated.")
         indices_to_import = self.matchFrames(self.config['history'][event]['files'])
         if indices_to_drop:
-            print(indices_to_import)
             csv_indices = range(len(indices_to_import))
-            print(csv_indices)
-            index_dict = dict(zip(indices_to_import, csv_indices))
+            index_dict = dict(zip(indices_to_import,csv_indices))
+            if xma_indices:
+              indices_to_drop = [indices_to_import[x] for x in indices_to_drop]
             indices_to_import = list(sorted(set(indices_to_import).difference(set(indices_to_drop))))
             csv_indices_to_import = [index_dict[x] for x in indices_to_import]
-            print(csv_indices_to_import)
-            print(indices_to_import)
             df=pd.read_csv(csv_path,sep=',',header=0,dtype='float')
             backup_path = os.path.join(os.path.dirname(csv_path),os.path.splitext(os.path.basename(csv_path))[0]+'_with_undigitizable.csv')
             df.to_csv(backup_path,index=False, na_rep='NaN')
             df1=df.iloc[csv_indices_to_import]
-            df1.to_csv(csv_path,index=False, na_rep='NaN')
-            ts = self.getTimeStamp()
-            update = {ts:{'operation':'dropUndigitizableFrames','files':indices_to_drop}}
-            self.updateConfig(event=update)
+            print(df1)
+            drops_correct = input("Check to see if your undigitizable frames were correctly excluded. Hit enter to continue, or type 'quit' to exit").rstrip(' ')
+            if drops_correct == 'quit':
+                sys.exit("Pipeline terminated.")
+            else:
+                df1.to_csv(csv_path,index=False, na_rep='NaN')
+                ts = self.getTimeStamp()
+                update = {ts:{'operation':'dropUndigitizableFrames','files':indices_to_drop}}
+                self.updateConfig(event=update)
         spliced_markers = self.spliceXma2Dlc(self.vids_merged[0], csv_path, indices_to_import, outlier_mode, swap, cross)
         self.extractMatchedFrames(indices_to_import, output_dir=self.dirs['labeled'], src_vids=self.vids_merged)
         self.updateConfig(videos=self.vids_merged, bodyparts=spliced_markers)
@@ -862,10 +879,12 @@ class Project:
             self.deleteLabeledFrames(self.dirs['labeled'])
             self.dlc.merge_datasets(self.yaml)
             self.mergeOutliers()
-            self.dlc.create_training_dataset(self.yaml)
-            # maybe track and print? not sure yet
-        else:
-            self.dlc.create_training_dataset(self.yaml)
+        self.dlc.check_labels(self.yaml)
+        self.dlc.create_training_dataset(self.yaml)
+    #
+    # def redact_from_collectedData(self, hdf_path, indices_to_drop=[]):
+    #     df = pd.read_hdf(hdf_path,"df_with_missing")
+    #     df1 = df.iloc[]
 
 
     def mergeOutliers(self):
@@ -1107,7 +1126,7 @@ class Project:
             df.loc[:,(scorer,part,'y')].mask(df.loc[:,(scorer,part,'likelihood')] < p_cutoff, inplace=True)
         return df
 
-    def splitDlc2Xma(self, hdf_path, bodyparts, frame_paths=[], interval=1, likelihood_threshold=0):
+    def splitDlc2Xma(self, hdf_path, bodyparts, frame_paths=[], interval=1, likelihood_threshold=0, save_hdf=True):
         p_string = '_p'+str(likelihood_threshold)+'_' if likelihood_threshold else ''
         interval_string = 'every'+str(interval) if interval != 1 else ''
         bodyparts_XY = []
@@ -1131,6 +1150,9 @@ class Project:
             df=df.loc[df.index.intersection(sorted_pngs)]
         if likelihood_threshold:
             df = self.filter_by_likelihood(df, likelihood_threshold)
+        if save_hdf:
+            tracked_hdf = os.path.splitext(hdf_path)[0]+'_'+interval_string+'_split_'+p_string+ts+'.h5'
+            df.to_hdf(tracked_hdf, 'df_with_missing', format='table', mode='w', nan_rep='NaN')
         df = df.reset_index().melt(id_vars=['index'])
         df = df[df['coords'] != 'likelihood']
         df['id'] = df['bodyparts']+'_'+df['coords'].str.upper()
@@ -1141,11 +1163,17 @@ class Project:
         else:
             extracted_frames = list(df.index)
         df = df.reindex(columns=bodyparts_XY)
-        tracked_csv = os.path.splitext(hdf_path)[0]+'_split_'+p_string+ts+'.csv'
+        tracked_csv = os.path.splitext(hdf_path)[0]+'_'+interval_string+'_split_'+p_string+ts+'.csv'
         df.to_csv(tracked_csv,index=False, na_rep='NaN')
-        self.updateWithFiles('splitDlc2Xma', [tracked_csv])
         print("Successfully split DLC format to XMALab 2D points; saved "+str(tracked_csv))
-        return extracted_frames
+        if save_hdf:
+            self.updateWithFiles('splitDlc2Xma', [tracked_csv, tracked_hdf])
+            return [extracted_frames, tracked_csv, tracked_hdf]
+        else:
+            self.updateWithFiles('splitDlc2Xma', [tracked_csv])
+            return [extracted_frames, tracked_csv]
+
+
 
     def getBodypartsFromXmaExport(self, csv_path):
     	df = pd.read_csv(csv_path, sep=',',header=0, dtype='float',na_values='NaN')
@@ -1171,3 +1199,145 @@ class Project:
         fig.tight_layout()
         plt.show()
         return fig
+
+    def filter_image(self, image, krad=17, gsigma=10, img_wt=3.6, blur_wt=-2.9, gamma=0.30):
+        krad = krad*2+1
+        image_blur = cv2.GaussianBlur(image, (krad, krad), gsigma)
+        image_blend = cv2.addWeighted(image, img_wt, image_blur, blur_wt, 0)
+        lut = np.array([((i/255.0)**gamma)*255.0 for i in range(256)])
+        image_gamma = image_blend.copy()
+        im_type = len(image_gamma.shape)
+        if im_type == 2:
+            image_gamma = lut[image_gamma]
+        elif im_type == 3:
+            image_gamma[:,:,0] = lut[image_gamma[:,:,0]]
+            image_gamma[:,:,1] = lut[image_gamma[:,:,1]]
+            image_gamma[:,:,2] = lut[image_gamma[:,:,2]]
+        return image_gamma
+
+    def show_crop(self, src, center=None, scale=None, contours=None, detected_marker=None):
+        if not center:
+            center= self.autocorrect_params['search_area']
+        if not scale:
+            scale= self.autocorrect_params['search_preview_scale']
+        if len(src.shape) < 3:
+            src = cv2.cvtColor(src, cv2.COLOR_GRAY2BGR)
+        image = src.copy().astype(np.uint8)
+        image = cv2.resize(image, None, fx=scale, fy=scale, interpolation = cv2.INTER_CUBIC)
+        if contours:
+            overlay = image.copy()
+            scaled_contours = [contour*scale for contour in contours]
+            cv2.drawContours(overlay, scaled_contours, -1, (255,0,0),2)
+            image = cv2.addWeighted(overlay, 0.25, image, 0.75, 0)
+        cv2.drawMarker(image, (center*scale, center*scale), color = (0,255,255), markerType = cv2.MARKER_CROSS, markerSize = 10, thickness = 1)
+        if detected_marker:
+            cv2.drawMarker(image, (int(detected_marker[0]*scale),int(detected_marker[1]*scale)),color = (255,0,0), markerType = cv2.MARKER_CROSS, markerSize = 10, thickness = 1)
+        plt.imshow(image)
+        plt.show()
+
+    def autocorrect(self, hdf_path, cam_dirs={'cam1':None,'cam2':None}, indices_to_use = [], paths_as_index = False, display_detected = False): #try 0.05 also
+        cv2_version = int(cv2.__version__[0])
+        time_start = datetime.datetime.now()
+        search_area = int(self.autocorrect_params['search_area'] + 0.5) if self.autocorrect_params['search_area']  >= 10 else 10
+        out_name = os.path.join(os.path.dirname(hdf_path),(os.path.splitext(os.path.basename(hdf_path))[0]+'_autocorrect.h5'))
+        df = pd.read_hdf(hdf_path, "df_with_missing")
+        if indices_to_use:
+            mask_list = [os.path.join(df.index[0].rsplit('/',1)[0],index) for index in png_indices]
+            df = df.loc[mask_list]
+        scorer = df.columns.get_level_values(0)[0]
+        bodyparts = df.columns.get_level_values(1)
+        parts_unique = []
+        for part in bodyparts:
+            this = part.rsplit('_',1)[0]
+            if not this in parts_unique:
+                parts_unique.append(this)
+        list_of_pngs = self.scanDir(cam_dirs['cam1'], 'png')
+        png_names = [os.path.split(png)[-1] for png in list_of_pngs]
+        png_names = sorted(png_names, key=lambda png_names: int(png_names[3:-4]))
+        for frame_index in range(len(df)):
+            if paths_as_index:
+                im_index = os.path.split(df.iloc[frame_index].name)[-1]
+            else:
+                im_index = png_names[frame_index]
+            for cam in ['cam1', 'cam2']:
+                ##Load frame
+                print('Processing '+str(im_index))
+                frame = cv2.imread(os.path.join(cam_dirs[cam],str(im_index)))
+                frame = self.filter_image(frame, krad=10)
+
+                ##Loop through all markers for each frame
+                for part in parts_unique:
+                    ##Find point and offsets
+                    x_float, y_float, likelihood = df.xs(part+'_'+cam, level='bodyparts',axis=1).iloc[frame_index]
+                    print(part+' Camera '+cam[-1]+' Likelihood: '+str(likelihood))
+                    if likelihood < self.autocorrect_params['likelihood_cutoff']:
+                        # print('Likelihood too low; skipping')
+                        continue
+                    x_start = int(x_float-search_area+0.5)
+                    y_start = int(y_float-search_area+0.5)
+                    x_end = int(x_float+search_area+0.5)
+                    y_end = int(y_float+search_area+0.5)
+
+                    ##Crop image to marker vicinity
+                    subimage = frame[y_start:y_end, x_start:x_end]
+
+                    ##Convert To float
+                    subimage_float = subimage.astype(np.float32)
+
+                    ##Create Blurred image
+                    radius = int(1.5 * self.autocorrect_params['mask_size']  + 0.5)
+                    sigma = radius * math.sqrt(2 * math.log(255)) - 1
+                    subimage_blurred = cv2.GaussianBlur(subimage_float, (2 * radius + 1, radius + 1), sigma)
+
+                    ##Subtract Background
+                    subimage_diff = subimage_float-subimage_blurred
+                    subimage_diff = cv2.normalize(subimage_diff, None, 0,255,cv2.NORM_MINMAX).astype(np.uint8)
+
+                    ##Median
+                    subimage_median = cv2.medianBlur(subimage_diff, 3)
+
+                    ##LUT
+                    subimage_median = self.filter_image(subimage_median, krad=3)
+
+                    ##Thresholding
+                    subimage_median = cv2.cvtColor(subimage_median, cv2.COLOR_BGR2GRAY)
+                    minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(subimage_median)
+                    thres = 0.5 * minVal + 0.5 * np.mean(subimage_median) + self.autocorrect_params['marker_threshold']* 0.01 * 255
+                    ret, subimage_threshold =  cv2.threshold(subimage_median, thres, 255, cv2.THRESH_BINARY_INV)
+
+                    ##Gaussian blur
+                    subimage_gaussthresh = cv2.GaussianBlur(subimage_threshold, (3,3), 1.3)
+
+                    ##Find contours
+                    if cv2_version == 3:
+                        subimage_gaussthresh, contours, hierarchy = cv2.findContours(subimage_gaussthresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE, offset=(x_start,y_start))
+                    else:
+                        contours, hierarchy = cv2.findContours(subimage_gaussthresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE, offset=(x_start,y_start))
+                    # print("Detected "+str(len(contours))+" contours in "+str(search_area*2)+"*"+str(search_area*2)+" neighborhood of marker "+part+' in Camera '+cam[-1])
+                    contours_im = contours.copy()
+                    contours_im = [contour-[x_start, y_start] for contour in contours_im]
+
+                    ##Find closest contour
+                    dist = 1000
+                    best_index = -1
+                    detected_centers = {}
+                    for i in range(len(contours)):
+                        detected_center, circle_radius = cv2.minEnclosingCircle(contours[i])
+                        distTmp = math.sqrt((x_float - detected_center[0])**2 + (y_float - detected_center[1])**2)
+                        detected_centers[round(distTmp, 4)] = detected_center
+                        if distTmp < dist:
+                            best_index = i
+                            dist = distTmp
+                    if (best_index >= 0 and dist <= self.autocorrect_params['snap_distance_cutoff']):
+                        detected_center, circle_radius = cv2.minEnclosingCircle(contours[best_index])
+                        detected_center_im, circle_radius_im = cv2.minEnclosingCircle(contours_im[best_index])
+                        if display_detected:
+                            self.show_crop(subimage_gaussthresh, center= self.autocorrect_params['search_area'], scale= self.autocorrect_params['search_preview_scale'], contours = [contours_im[best_index]], detected_marker = detected_center_im)
+                        df.loc[df.iloc[frame_index].name, (scorer,part+'_'+cam, ['x'])]  = detected_center[0]
+                        df.loc[df.iloc[frame_index].name, (scorer,part+'_'+cam, ['y'])]  = detected_center[1]
+        print('done! saving...')
+        df.to_hdf(out_name, 'df_with_missing', format='table', mode='w', nan_rep='NaN')
+        time_end = datetime.datetime.now()
+        time_taken = time_end - time_start
+        print('Autocorrected '+str(len(df)) + ' frames in '+str(time_taken))
+        self.splitDlc2Xma(out_name, self.markers, save_hdf=False)
