@@ -1287,7 +1287,7 @@ class Project:
                     ##Create Blurred image
                     radius = int(1.5 * self.autocorrect_params['mask_size']  + 0.5)
                     sigma = radius * math.sqrt(2 * math.log(255)) - 1
-                    subimage_blurred = cv2.GaussianBlur(subimage_float, (2 * radius + 1, radius + 1), sigma)
+                    subimage_blurred = cv2.GaussianBlur(subimage_float, (2 * radius + 1, 2 * radius + 1), sigma)
 
                     ##Subtract Background
                     subimage_diff = subimage_float-subimage_blurred
